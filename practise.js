@@ -170,6 +170,7 @@ const Practise = (() => {
     const seg = h.split("/").filter(Boolean);
     if (seg[0] === "notes") return { tab: "notes" };
     if (seg[0] === "topics") return { tab: "topics", name: "topics" };
+    if (seg[0] === "slides") return { tab: "slides", name: "slides" };
     if (seg[0] === "drill") return { tab: "practise", name: "drill" };
     if (seg[0] === "practise" && seg[1]) {
       const sec = ["case", "a", "b", "score"].includes(seg[2]) ? seg[2] : "case";
@@ -852,6 +853,65 @@ const Practise = (() => {
     deck(key).then((doc) => { if (SL.open?.st !== st) return; st.doc = doc; msg.remove(); body.append(canvas); show(n); })
       .catch(() => { msg.textContent = "Couldn't open " + what + ". Check your connection and try again."; });
   }
+  /* The Slides tab: every deck and the book, with the slides the practice questions cite most. */
+  function citations() {
+    const by = {}, book = new Map();
+    const add = (srcs) => new Set(srcs || []).forEach((s) => {
+      let m;
+      if ((m = s.match(/^C(\d) S(\d+)/))) { const c = +m[1]; (by[c] = by[c] || new Map()).set(+m[2], (by[c].get(+m[2]) || 0) + 1); }
+      else if ((m = s.match(/^pp?\. (\d+)/))) book.set(+m[1], (book.get(+m[1]) || 0) + 1);
+    });
+    exams().forEach((ex) => { ex.mcq.forEach((q) => add(q.sources)); partsOf(ex).forEach(({ pt }) => add(pt.sources)); });
+    (P.content.drill || []).forEach((q) => add(q.sources));
+    return { by, book };
+  }
+  function renderLibrary(box) {
+    const head = el("div", "hero-text");
+    head.append(el("p", "kicker", "Course material · the files you'll have in the exam"), el("h1", null, "Slides & book"),
+      el("p", "lede", "Every class deck and Gillingham's book, opened right here. Under each deck: the slides the practice questions cite most."));
+    box.append(head);
+    if (!SL.manifest) { box.append(el("p", "loading", "The slides can't be loaded right now. Check your connection and reload.")); return; }
+    const { by, book } = citations();
+    const grid = el("div", "libgrid");
+    for (let c = 1; c <= 9; c++) {
+      if (!SL.manifest.classes?.[c]) continue;
+      const card = panel("libcard"); card.style.setProperty("--cc", "var(--c" + c + ")");
+      const top = el("div", "lc-top"), t = el("div", "lc-t");
+      t.append(el("b", null, CLASS_NAMES[c]), el("span", "small", "Class " + c + " slides"));
+      top.append(el("span", "n", String(c)), t); card.append(top);
+      const cited = [...(by[c] || new Map())].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+      if (cited.length) {
+        const k = el("div", "lc-key"), row = el("div", "lc-slides");
+        cited.slice(0, 6).sort((a, b) => a[0] - b[0]).forEach(([n, k2]) => {
+          const b = el("button", "src link", "slide " + n); b.type = "button"; b.append(el("small", null, "×" + k2));
+          b.title = k2 + (k2 === 1 ? " question cites" : " questions cite") + " this slide";
+          b.addEventListener("click", () => openDoc("c" + c, n)); row.append(b);
+        });
+        k.append(el("span", "kicker", "Most cited in the questions"), row); card.append(k);
+      }
+      const total = cited.reduce((sum, x) => sum + x[1], 0);
+      const foot = el("div", "lc-foot");
+      foot.append(el("span", "small", total ? plural(total, "reference") : "No references yet"), button("Open slides", "small", () => openDoc("c" + c, 1), "book"));
+      card.append(foot); grid.append(card);
+    }
+    box.append(grid);
+    if (SL.manifest.book) {
+      const off = SL.manifest.book.offset || 0, total = [...book.values()].reduce((sum, x) => sum + x, 0);
+      const bk = panel("libbook"), top = el("div", "lc-top"), t = el("div", "lc-t");
+      t.append(el("b", null, "Gillingham, Tech-Enabled Hospitality (2025)"), el("span", "small", "The course book · " + plural(total, "reference") + " in the questions"));
+      top.append(t, button("Open the book", "small", () => openDoc("book", 1 + off), "book")); bk.append(top);
+      const ch = el("div", "lb-ch");
+      BOOK_CH.forEach(([p, name], i) => {
+        const end = (BOOK_CH[i + 1] ? BOOK_CH[i + 1][0] : 271) - 1;
+        const n = [...book].filter(([pg]) => pg >= p && pg <= end).reduce((sum, x) => sum + x[1], 0);
+        const b = el("button", "lb-row"); b.type = "button";
+        b.append(el("span", "lb-n", String(i + 1)), el("span", null, name[0].toUpperCase() + name.slice(1)), el("span", "lb-p", "p. " + p), el("span", "lb-c", n ? "×" + n : ""));
+        if (n) b.title = n + (n === 1 ? " reference" : " references") + " in the questions";
+        b.addEventListener("click", () => openDoc("book", p + off)); ch.append(b);
+      });
+      bk.append(el("span", "kicker", "Chapters"), ch); box.append(bk);
+    }
+  }
   function closeSlides() {
     if (!SL.open) return;
     SL.open.nodes.forEach((x) => x.remove()); SL.open = null; document.body.classList.remove("slideview-open");
@@ -1058,6 +1118,7 @@ const Practise = (() => {
     keyTarget = null;
     box.textContent = ""; box.style.removeProperty("--x");
     if (P.view.name === "topics") renderTopics(box);
+    else if (P.view.name === "slides") renderLibrary(box);
     else if (P.view.name === "exam") renderExam(box);
     else if (P.view.name === "drill") renderDrill(box);
     else renderHome(box);

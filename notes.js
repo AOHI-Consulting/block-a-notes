@@ -64,8 +64,8 @@ function upmsg(t, warn) { const m = $("#upmsg"); m.textContent = t; m.classList.
 /* ---------- tabs (the router in practise.js decides which one shows) ---------- */
 function showTab(tab) {
   const was = S.tab;
-  S.tab = ["practise", "topics", "notes"].includes(tab) ? tab : "practise";
-  [["practise", "#tabP"], ["topics", "#tabT"], ["notes", "#tabN"]].forEach(([t, id]) => {
+  S.tab = ["practise", "topics", "slides", "notes"].includes(tab) ? tab : "practise";
+  [["practise", "#tabP"], ["topics", "#tabT"], ["slides", "#tabS"], ["notes", "#tabN"]].forEach(([t, id]) => {
     if (S.tab === t) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
   });
   $("#practise").hidden = S.tab === "notes";
