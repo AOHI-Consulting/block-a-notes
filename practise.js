@@ -167,7 +167,7 @@ const Practise = (() => {
     const hero = el("section", "hero");
     const ht = el("div", "hero-text");
     ht.append(el("p", "kicker", "Digital Developments · individual exam"), el("h1", null, "Practise for Friday's exam"),
-      el("p", "lede", "His trial exam with his answer key, three mock exams in the same format and a quick drill by class. Every answer tells you where to look it up."));
+      el("p", "lede", "A quick drill by class with no case to read, his trial exam with his answer key, and three mock exams in the same format. Every answer tells you where to look it up."));
     const resume = el("div", "resume");
     const last = store.get("last");
     const lastEx = last && examById(last.id);
@@ -231,33 +231,64 @@ const Practise = (() => {
     box.append(xs);
 
     const ds = el("section", "sect");
-    ds.append(h2("Quick drill", "10 questions at a time, no case, instant feedback"));
+    ds.append(h2("Quick drill", "no case to read: pick classes, pick a length, go"));
     const db = panel("drillbox");
     const pool = P.content.drill || [];
     const stats = store.get("drill:stats") || {};
     const chosen = new Set(store.get("drill:classes") || []);
     const ct = el("div", "ctiles");
-    const countLine = el("span", "small");
-    const upCount = () => {
-      const n = pool.filter((q) => !chosen.size || q.classes.some((c) => chosen.has(c))).length;
-      countLine.textContent = (chosen.size ? chosen.size + (chosen.size === 1 ? " class" : " classes") + " picked · " : "All classes · ") + n + " questions";
-    };
     for (let c = 1; c <= 9; c++) {
       const qs = pool.filter((q) => q.classes.includes(c));
-      const seen = qs.filter((q) => stats[q.id]), right = seen.filter((q) => stats[q.id].right).length;
+      const seen = qs.filter((q) => stats[q.id]), right = seen.filter((q) => stats[q.id].right).length, missed = seen.length - right;
       const b = el("button", "ctile"); b.type = "button"; b.style.setProperty("--cc", "var(--c" + c + ")");
       b.setAttribute("aria-pressed", String(chosen.has(c)));
-      const t = el("span", "t", CLASS_NAMES[c]); t.append(el("small", null, qs.length + " questions" + (seen.length ? " · " + right + "/" + seen.length + " right" : "")));
-      b.append(el("span", "n", String(c)), t, el("span", "ck"));
-      b.addEventListener("click", () => { chosen.has(c) ? chosen.delete(c) : chosen.add(c); b.setAttribute("aria-pressed", String(chosen.has(c))); store.set("drill:classes", [...chosen]); upCount(); });
+      const t = el("span", "t", CLASS_NAMES[c]);
+      t.append(el("small", null, plural(qs.length, "question") + (seen.length ? " · " + right + " right" + (missed ? " · " + missed + " to retry" : "") : "")));
+      const mb = el("span", "mb"); mb.title = right + " of " + qs.length + " right last time";
+      const mf = el("i"); mf.style.width = pct(right, qs.length) + "%"; mb.append(mf);
+      b.append(el("span", "n", String(c)), t, el("span", "ck"), mb);
+      b.addEventListener("click", () => { chosen.has(c) ? chosen.delete(c) : chosen.add(c); b.setAttribute("aria-pressed", String(chosen.has(c))); store.set("drill:classes", [...chosen]); paintFoot(); });
       ct.append(b);
     }
-    upCount();
+    // The foot always says exactly how many questions a round will have: a class with 8 questions
+    // offers "5" and "All 8", never a 10 it can't fill.
     const df = el("div", "drillfoot");
-    df.append(countLine, button("Start 10 questions", "primary", () => startDrill([...chosen]), "play"));
+    const paintFoot = () => {
+      df.textContent = "";
+      const s = drillSettings(), inClasses = drillPool({ ...s, mode: "mix" }, stats);
+      const nNew = inClasses.filter((q) => !stats[q.id]).length, nMissed = inClasses.filter((q) => stats[q.id] && !stats[q.id].right).length;
+      if ((s.mode === "new" && !nNew) || (s.mode === "missed" && !nMissed)) { s.mode = "mix"; store.set("drill:mode", "mix"); }
+      const avail = drillPool(s, stats).length, n = s.size ? Math.min(s.size, avail) : avail;
+      const which = el("div", "seg"); which.setAttribute("aria-label", "Which questions");
+      [["mix", "Mixed", "New and missed questions first, then the rest", 0], ["new", "New", "Only questions you haven't answered yet", nNew], ["missed", "Missed", "Only questions you got wrong last time", nMissed]].forEach(([m, l, tip, k]) => {
+        const b = el("button", null, l); b.type = "button"; b.title = tip; b.setAttribute("aria-pressed", String(s.mode === m));
+        if (m !== "mix") { b.append(el("span", "cnt", String(k))); b.disabled = !k; }
+        b.addEventListener("click", () => { store.set("drill:mode", m); paintFoot(); });
+        which.append(b);
+      });
+      const len = el("div", "seg"); len.setAttribute("aria-label", "How many questions");
+      [...DRILL_SIZES.filter((z) => z < avail), 0].forEach((z) => {
+        const b = el("button", null, z ? String(z) : "All " + avail); b.type = "button";
+        b.setAttribute("aria-pressed", String(z ? s.size === z : !s.size || s.size >= avail));
+        b.addEventListener("click", () => { store.set("drill:size", z); paintFoot(); });
+        len.append(b);
+      });
+      const line = el("p", "small");
+      line.append(el("b", null, chosen.size ? [...chosen].sort((a, b) => a - b).map((c) => CLASS_NAMES[c]).join(", ") : "All classes"),
+        document.createTextNode(" · " + plural(inClasses.length, "question") + (nNew < inClasses.length ? ", " + nNew + " new" : "")));
+      if (chosen.size) line.append(document.createTextNode(" · "), textBtn("clear", () => { store.set("drill:classes", []); render(); }));
+      const opts = el("div", "drillopts");
+      const g1 = el("div", "grp"); g1.append(el("span", "kicker", "Questions"), which);
+      const g2 = el("div", "grp"); g2.append(el("span", "kicker", "Length"), len);
+      const start = button(n ? "Start " + plural(n, "question") : "Nothing to drill", "primary", () => startDrill(), "play");
+      start.disabled = !n;
+      opts.append(g1, g2, start);
+      df.append(line, opts);
+    };
+    paintFoot();
     db.append(ct, df);
     ds.append(db);
-    box.append(ds);
+    box.insertBefore(ds, tiles);   // the drill comes first: it's the everyday way to practise
 
     box.append(el("p", "foot", "Your answers and scores stay on this device. An open answer reaches the group only when you press Share. Built " + (P.content.built ? new Date(P.content.built).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "") + " from the class decks, our recordings and Gillingham; the mocks are practice material written by Claude, not by the lecturer."));
   }
@@ -684,11 +715,26 @@ const Practise = (() => {
   const confirmReset = { armed: false };
 
   /* ---------- drill ---------- */
-  function startDrill(classes, items) {
-    const pool = (P.content.drill || []).filter((q) => !classes.length || q.classes.some((c) => classes.includes(c)));
-    const stats = store.get("drill:stats") || {};
-    const picked = items || pool.map((q) => ({ q, r: Math.random() + (stats[q.id]?.right ? 1 : 0) + (stats[q.id]?.seen ? .5 : 0) })).sort((a, b) => a.r - b.r).slice(0, 10).map((x) => x.q);
-    P.drill = { items: picked, i: 0, picks: {}, checked: {}, from: items ? "topics" : "practise" };
+  const DRILL_SIZES = [5, 10, 20];   // plus "All"; stored as drill:size, 0 = all
+  function drillSettings() {
+    const size = store.get("drill:size");
+    return { classes: store.get("drill:classes") || [], size: size === undefined || size === null ? 10 : size, mode: store.get("drill:mode") || "mix" };
+  }
+  function drillPool(s, stats) {
+    return (P.content.drill || []).filter((q) => (!s.classes.length || q.classes.some((c) => s.classes.includes(c)))
+      && (s.mode === "new" ? !stats[q.id] : s.mode === "missed" ? !!stats[q.id] && !stats[q.id].right : true));
+  }
+  // A round from the saved settings (new questions first, then missed, then ones you got right), or
+  // exactly the questions given (one from Topics, or the ones missed in the last round).
+  function startDrill(items, from) {
+    if (!items) {
+      const s = drillSettings(), stats = store.get("drill:stats") || {};
+      const pool = drillPool(s, stats);
+      items = pool.map((q) => ({ q, r: Math.random() + (stats[q.id]?.right ? 1 : 0) + (stats[q.id]?.seen ? .5 : 0) }))
+        .sort((a, b) => a.r - b.r).slice(0, s.size || pool.length).map((x) => x.q);
+    }
+    if (!items.length) return;
+    P.drill = { items, i: 0, picks: {}, checked: {}, from: from || "practise" };
     go("drill");
   }
 
@@ -710,14 +756,23 @@ const Practise = (() => {
       const hero = panel("scorehero");
       hero.append(ring(pct(right, d.items.length), right + "/" + d.items.length, "right"));
       const sp = el("div", "sparts");
-      sp.append(el("b", null, right === d.items.length ? "All right. Try another set, or a full exam." : "Look up the ones you missed, then try again."));
-      const btns = el("div", "btns"); btns.append(button("Another 10", "primary", () => startDrill(store.get("drill:classes") || []), "play"), button("Back to exams", "ghost", () => go("practise")));
-      sp.append(btns); hero.append(sp); main.append(hero);
       const missed = d.items.filter((q) => d.picks[q.id] !== q.answer);
+      sp.append(el("b", null, !missed.length ? "All right. Try another round, or a full exam." : "Open the ones you missed to reread why, then retry them."));
+      const btns = el("div", "btns");
+      if (missed.length) btns.append(button(missed.length === 1 ? "Retry the one you missed" : "Retry the " + missed.length + " you missed", "primary", () => startDrill([...missed].sort(() => Math.random() - .5), d.from), "reset"));
+      if (d.from === "topics") btns.append(button("Back to Topics", missed.length ? "ghost" : "primary", () => go("topics")));
+      else btns.append(button("New round", missed.length ? "ghost" : "primary", () => startDrill(), "play"), button("Back to exams", "ghost", () => go("practise")));
+      sp.append(btns); hero.append(sp); main.append(hero);
       if (missed.length) {
         const list = panel("revisit");
-        missed.forEach((q) => { const row = el("div", "rv"); const t = el("span", "t", q.concept || ""); t.append(el("small", null, (q.sources || []).join(" · "))); row.append(chips(q.classes), t, el("span")); list.append(row); });
-        const sec = el("section", "sect"); sec.append(h2("Revisit"), list); main.append(sec);
+        missed.forEach((q) => {
+          const row = el("button", "rv"); row.type = "button";
+          const t = el("span", "t", q.concept || q.stem.slice(0, 90)); t.append(el("small", null, (q.sources || []).join(" · ")));
+          row.append(chips(q.classes), t, icon("next"));
+          row.addEventListener("click", () => { d.i = d.items.indexOf(q); d.review = true; render(); window.scrollTo({ top: 0 }); });
+          list.append(row);
+        });
+        const sec = el("section", "sect"); sec.append(h2("Missed", "open one to see the answer and where to look it up"), list); main.append(sec);
       }
       box.append(main); return;
     }
@@ -732,8 +787,8 @@ const Practise = (() => {
         store.set("drill:stats", stats); render();
       },
       prev: d.i > 0 ? () => { d.i--; render(); window.scrollTo({ top: 0 }); } : null,
-      next: d.checked[q.id] ? () => { d.i++; render(); window.scrollTo({ top: 0 }); } : null,
-      nextLabel: d.i + 1 < d.items.length ? "Next" : "See how you did",
+      next: d.checked[q.id] ? () => { d.i = d.review ? d.items.length : d.i + 1; d.review = false; render(); window.scrollTo({ top: 0 }); } : null,
+      nextLabel: d.review ? "Back to results" : d.i + 1 < d.items.length ? "Next" : "See how you did",
     }));
     box.append(main);
   }
@@ -756,7 +811,7 @@ const Practise = (() => {
   function openItem(it) {
     if (it.kind === "mcq") go("practise/" + it.ex.id + "/a/" + it.n);
     else if (it.kind === "open") go("practise/" + it.ex.id + "/b/" + it.n);
-    else startDrill([], [it.q]);
+    else startDrill([it.q], "topics");
   }
   function qrow(it, terms) {
     const b = el("button", "qr"); b.type = "button";

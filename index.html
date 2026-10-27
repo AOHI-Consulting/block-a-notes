@@ -194,8 +194,27 @@ kbd { font-family: var(--mono); font-size: 10.5px; padding: 1px 5px; border-radi
 .ctile .ck { width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--line-2); display: grid; place-items: center; }
 .ctile[aria-pressed="true"] { border-color: color-mix(in srgb, var(--cc) 60%, var(--line)); background: color-mix(in srgb, var(--cc) 7%, var(--panel)); }
 .ctile[aria-pressed="true"] .ck { background: var(--cc); border-color: var(--cc); }
+.ctile[aria-pressed="true"] .n { background: var(--cc); color: var(--panel); }
 .ctile[aria-pressed="true"] .ck::after { content: ""; width: 8px; height: 5px; border-left: 2px solid var(--panel); border-bottom: 2px solid var(--panel); transform: rotate(-45deg) translate(1px, -1px); }
-.drillfoot { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.ctile .mb { grid-column: 1 / -1; height: 3px; border-radius: 999px; background: var(--panel-3); overflow: hidden; display: flex; }
+.ctile .mb i { display: block; height: 100%; background: var(--cc); border-radius: 999px; }
+.drillfoot { display: grid; gap: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+.drillfoot .small b { color: var(--ink); font-weight: 600; }
+.drillopts { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: center; }
+.drillopts .grp { display: flex; align-items: center; gap: 10px; }
+.drillopts .btn.primary { margin-left: auto; }
+@media (max-width: 620px) {
+  .drillbox { padding: 14px; }
+  .ctiles { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .ctile { grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 9px 10px; }
+  .ctile .ck { display: none; }
+  .ctile .n { width: 22px; height: 22px; font-size: 11px; border-radius: 7px; }
+  .ctile .t { font-size: 12.5px; }
+  .ctile .t small { font-size: 11px; }
+  .drillopts { display: grid; gap: 10px; }
+  .drillopts .grp { justify-content: space-between; }
+  .drillopts .btn.primary { margin-left: 0; width: 100%; padding: 12px 16px; }
+}
 .foot { font-size: 12px; color: var(--muted); font-family: var(--mono); }
 
 /* ---------- exam ---------- */
@@ -213,6 +232,7 @@ kbd { font-family: var(--mono); font-size: 10.5px; padding: 1px 5px; border-radi
 .seg button:hover { color: var(--ink); }
 .seg button[aria-pressed="true"], .seg button[aria-current="page"] { background: var(--panel-3); color: var(--ink); }
 .seg button .cnt { font-family: var(--mono); font-size: 11px; color: var(--muted); font-weight: 500; }
+.seg button:disabled { opacity: .4; cursor: not-allowed; }
 .secbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; position: sticky; top: 57px; z-index: 20; padding: 8px 0; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 @media (max-width: 860px) { .secbar { top: 103px; } }
 .secbar .seg { overflow-x: auto; max-width: 100%; scrollbar-width: none; }
@@ -461,7 +481,7 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30px; color: var(--muted); font-size: 12px; font-family: var(--mono); }
 </style>
 </head>
-<body data-v="5">
+<body data-v="6">
 <header class="top">
   <div class="top-in">
     <a class="logo" href="#/practise" aria-label="Block A Notes, home">
@@ -520,7 +540,7 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30
 </main>
 
 <footer>Only people with the invitation link can open this page.</footer>
-<script src="notes.js?v=5"></script>
-<script src="practise.js?v=5"></script>
+<script src="notes.js?v=6"></script>
+<script src="practise.js?v=6"></script>
 </body>
 </html>
