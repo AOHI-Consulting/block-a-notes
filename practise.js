@@ -49,11 +49,31 @@ const Practise = (() => {
   function textBtn(text, fn, cls) { const b = el("button", "tbtn" + (cls ? " " + cls : ""), text); b.type = "button"; b.addEventListener("click", fn); return b; }
   function chip(c) { const s = el("span", "chip", "C" + c); s.style.setProperty("--cc", "var(--c" + c + ")"); s.title = "Class " + c + ": " + (CLASS_NAMES[c] || ""); return s; }
   function chips(classes) { const w = el("span", "chips"); (classes || []).forEach((c) => w.append(chip(c))); return w; }
+  // References are stored as short codes ("C7 S43", "C4 0:48", "p. 212", "Key Q3") and shown in plain words.
+  // Students only have the slides, the book and the trial exam, so anything from a class itself is
+  // shown as that class's transcript, without times.
+  const BOOK_CH = [[5, "new landscape"], [23, "technology divide"], [37, "foundation"], [55, "PMS hub"], [71, "marketing"], [93, "revenue management"],
+    [117, "sustainability & IoT"], [135, "operations & security"], [149, "guest communication"], [165, "fintech"], [181, "guest experience"], [197, "AI"],
+    [219, "tech marketplace"], [237, "the future"]];
+  function sourceLabel(s) {
+    let m;
+    if ((m = s.match(/^C(\d) S(\d+)(?:[–-](\d+))?$/))) return "Class " + m[1] + " slides · " + (m[3] ? "slides " + m[2] + "–" + m[3] : "slide " + m[2]);
+    if ((m = s.match(/^C(\d)(?:[ab]| pt\d)?(?: \d:\d\d.*)?$/))) return "Class " + m[1] + " transcript";
+    if ((m = s.match(/^pp?\. (\d+)(?:[–-](\d+))?$/))) {
+      const ch = BOOK_CH.reduce((f, c, i) => (+m[1] >= c[0] ? i : f), 0);
+      return "Gillingham " + s + " (ch. " + (ch + 1) + ", " + BOOK_CH[ch][1] + ")";
+    }
+    if ((m = s.match(/^Key Q?(\w+)$/))) return "His answer key · " + (/^\d+$/.test(m[1]) ? "Q" : "") + m[1];
+    if ((m = s.match(/^Demo Q(\d+)$/))) return "His trial exam · Q" + m[1];
+    if (/^Exhibit \d+$/.test(s)) return "The case · " + s;
+    return s.replace(/^C(\d) reading$/, "Class $1 reading").replace(/\bC(\d) reading\b/, "class $1 reading");
+  }
+  const sourceLabels = (list) => [...new Set((list || []).map(sourceLabel))];
   function sourcesLine(list) {
     if (!list || !list.length) return null;
     const p = el("div", "srcs");
     const lab = el("span", "srclab"); lab.append(icon("book"), document.createTextNode("Look it up")); p.append(lab);
-    list.forEach((s) => p.append(el("span", "src", s)));
+    sourceLabels(list).forEach((s) => p.append(el("span", "src", s)));
     return p;
   }
   function panel(cls) { return el("div", "panel " + (cls || "")); }
@@ -303,7 +323,7 @@ const Practise = (() => {
     ds.append(db);
     box.insertBefore(ds, tiles);   // the drill comes first: it's the everyday way to practise
 
-    box.append(el("p", "foot", "Your answers and scores stay on this device. An open answer reaches the group only when you press Share. Built " + (P.content.built ? new Date(P.content.built).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "") + " from the class decks, our recordings and Gillingham; the mocks are practice material written by Claude, not by the lecturer."));
+    box.append(el("p", "foot", "Your answers and scores stay on this device. An open answer reaches the group only when you press Share. Built " + (P.content.built ? new Date(P.content.built).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "") + " from the class slides, the class transcripts and Gillingham; the mocks are practice material written by Claude, not by the lecturer."));
   }
 
   /* ---------- exam shell ---------- */
@@ -712,7 +732,7 @@ const Practise = (() => {
       const list = panel("revisit");
       missed.forEach(({ q, i }) => {
         const b = el("button", "rv"); b.type = "button";
-        const t = el("span", "t", q.concept || q.stem.slice(0, 90)); t.append(el("small", null, (q.sources || []).join(" · ")));
+        const t = el("span", "t", q.concept || q.stem.slice(0, 90)); t.append(el("small", null, sourceLabels(q.sources).join(" · ")));
         b.append(el("span", "qd no", String(i + 1)), t, icon("next"));
         b.addEventListener("click", () => go("practise/" + ex.id + "/a/" + (i + 1)));
         list.append(b);
@@ -780,7 +800,7 @@ const Practise = (() => {
         const list = panel("revisit");
         missed.forEach((q) => {
           const row = el("button", "rv"); row.type = "button";
-          const t = el("span", "t", q.concept || q.stem.slice(0, 90)); t.append(el("small", null, (q.sources || []).join(" · ")));
+          const t = el("span", "t", q.concept || q.stem.slice(0, 90)); t.append(el("small", null, sourceLabels(q.sources).join(" · ")));
           row.append(chips(q.classes), t, icon("next"));
           row.addEventListener("click", () => { d.i = d.items.indexOf(q); d.review = true; render(); window.scrollTo({ top: 0 }); });
           list.append(row);
