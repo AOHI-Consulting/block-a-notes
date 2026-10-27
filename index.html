@@ -345,6 +345,10 @@ body.slideview-open { overflow: hidden; }
 .sh-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
 .sh-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-size: 15px; }
 .sh-count { font-family: var(--mono); font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.sh-top { min-width: 0; }
+.sh-cite { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--accent-wash); }
+.sh-cite:empty { display: none; }
+.sh-cite .tbtn { font-family: var(--mono); font-size: 12px; color: var(--accent-ink); }
 .sh-body { display: grid; padding: 16px; overflow: auto; background: var(--panel-2); touch-action: pan-x pan-y; overscroll-behavior: contain; }
 .sh-body > * { margin: auto; }
 .sh-body canvas { display: block; border-radius: 8px; box-shadow: var(--shadow); background: #fff; }
@@ -541,7 +545,7 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30px; color: var(--muted); font-size: 12px; font-family: var(--mono); }
 </style>
 </head>
-<body data-v="12">
+<body data-v="13">
 <header class="top">
   <div class="top-in">
     <a class="logo" href="#/practise" aria-label="Block A Notes, home">
@@ -601,7 +605,7 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30
 </main>
 
 <footer>Only people with the invitation link can open this page.</footer>
-<script src="notes.js?v=12"></script>
-<script src="practise.js?v=12"></script>
+<script src="notes.js?v=13"></script>
+<script src="practise.js?v=13"></script>
 </body>
 </html>

@@ -824,6 +824,22 @@ const Practise = (() => {
     const fs = button("", "ghost small", () => setFull(!st.full), "expand"); fs.setAttribute("aria-label", "Full screen"); fs.title = "Full screen (F)";
     const x = button("", "ghost small", closeSlides, "x"); x.setAttribute("aria-label", "Close");
     head.append(title, count, fs, x);
+    const citeBar = el("div", "sh-cite"), top = el("div", "sh-top"); top.append(head, citeBar);
+    // what practises this slide: a drill round with the case-free questions, links to the exam questions
+    const paintCite = () => {
+      citeBar.textContent = "";
+      const e = citeIndex().get(book ? "book:" + (st.n - off) : key + ":" + st.n);
+      if (!e) return;
+      citeBar.append(el("span", "kicker", book ? "On this page" : "On this slide"));
+      if (e.drill.length) citeBar.append(button("Practise " + plural(e.drill.length, "question"), "primary small", () => {
+        const qs = [...e.drill].sort(() => Math.random() - 0.5); closeSlides(); startDrill(qs, "slides");
+      }, "play"));
+      if (e.exam.length) {
+        citeBar.append(el("span", "small", e.drill.length ? "also in" : "in"));
+        e.exam.slice(0, 6).forEach((it) => citeBar.append(textBtn(it.label, () => { closeSlides(); go("practise/" + it.ex.id + "/" + it.path); })));
+        if (e.exam.length > 6) citeBar.append(el("span", "small", "+" + (e.exam.length - 6)));
+      }
+    };
     const body = el("div", "sh-body"), canvas = el("canvas"), msg = el("p", "loading", "Opening " + what + "…");
     body.append(msg);
     const prev = button("Previous", "ghost small", () => show(st.n - 1), "back");
@@ -834,7 +850,7 @@ const Practise = (() => {
     const zbox = el("div", "zoombox"); zbox.append(zout, zlab, zin);
     const mid = el("div", "sh-mid"); mid.append(zbox, el("span", "hint", rule));
     const foot = el("div", "sh-foot"); foot.append(prev, mid, next);
-    sh.append(head, body, foot);
+    sh.append(top, body, foot);
     document.body.append(back, sh); document.body.classList.add("slideview-open");
     SL.open = { st, show: (k) => show(k), zoom: (f) => setZoom(f ? st.zoom * f : 1), full: () => setFull(!st.full), nodes: [back, sh] };
     x.focus();
@@ -866,6 +882,7 @@ const Practise = (() => {
       st.n = k;
       count.textContent = book ? (st.n > off ? "p. " + (st.n - off) : "front matter") + " · " + st.n + "/" + st.doc.numPages : "slide " + st.n + " of " + st.doc.numPages;
       prev.disabled = st.n <= 1; next.disabled = st.n >= st.doc.numPages;
+      paintCite();
       zlab.textContent = Math.round(st.zoom * 100) + "%"; zout.disabled = st.zoom <= 1; zin.disabled = st.zoom >= 4;
       body.classList.toggle("zoomed", st.zoom > 1);
       const page = await st.doc.getPage(st.n);
@@ -1059,6 +1076,27 @@ const Practise = (() => {
       bk.append(el("span", "kicker", "Chapters"), ch); lib.append(bk);
     }
   }
+  // "c7:43" or "book:212" → the drill questions and exam questions that cite that slide or printed page
+  function citeIndex() {
+    if (SL.cite) return SL.cite;
+    const idx = new Map();
+    const put = (key, kind, item) => {
+      let e = idx.get(key); if (!e) idx.set(key, (e = { drill: [], exam: [] }));
+      if (!e[kind].some((x) => x === item || (x.label && x.label === item.label))) e[kind].push(item);
+    };
+    const each = (srcs, kind, item) => (srcs || []).forEach((s) => {
+      let m;
+      if ((m = s.match(/^C(\d) S(\d+)(?:[–-](\d+))?$/))) for (let i = +m[2]; i <= +(m[3] || m[2]); i++) put("c" + m[1] + ":" + i, kind, item);
+      else if ((m = s.match(/^pp?\. (\d+)(?:[–-](\d+))?$/))) for (let i = +m[1]; i <= +(m[2] || m[1]); i++) put("book:" + i, kind, item);
+    });
+    (P.content.drill || []).forEach((q) => each(q.sources, "drill", q));
+    exams().forEach((ex) => {
+      const short = ex.kind === "demo" ? "Trial" : ex.title.replace("Mock exam ", "Mock ");
+      ex.mcq.forEach((q, i) => each(q.sources, "exam", { ex, path: "a/" + (i + 1), label: short + " Q" + q.id }));
+      partsOf(ex).forEach(({ pt, k }, i) => each(pt.sources, "exam", { ex, path: "b/" + (i + 1), label: short + " " + k }));
+    });
+    return (SL.cite = idx);
+  }
   function closeSlides() {
     if (!SL.open) return;
     SL.open.nodes.forEach((x) => x.remove()); SL.open = null; document.body.classList.remove("slideview-open");
@@ -1092,7 +1130,8 @@ const Practise = (() => {
     const d = P.drill;
     if (!d || !d.items.length) { go("practise"); return; }
     const head = el("div", "xhead");
-    const cr = el("nav", "crumbs"); const a = el("a"); a.href = d.from === "topics" ? "#/topics" : "#/practise"; a.append(icon("back"), document.createTextNode(d.from === "topics" ? "Topics" : "All exams")); cr.append(a);
+    const [backHref, backText] = { topics: ["#/topics", "Topics"], slides: ["#/slides", "Slides"] }[d.from] || ["#/practise", "All exams"];
+    const cr = el("nav", "crumbs"); const a = el("a"); a.href = backHref; a.append(icon("back"), document.createTextNode(backText)); cr.append(a);
     head.append(cr);
     const tt = el("div", "xtitle"); const lft = el("div", "lft");
     lft.append(el("span", "tag", "Quick drill"), el("h1", null, d.i < d.items.length ? (d.items.length === 1 ? "One question" : "Question " + (d.i + 1) + " of " + d.items.length) : "How you did"));
@@ -1110,7 +1149,7 @@ const Practise = (() => {
       sp.append(el("b", null, !missed.length ? "All right. Try another round, or a full exam." : "Open the ones you missed to reread why, then retry them."));
       const btns = el("div", "btns");
       if (missed.length) btns.append(button(missed.length === 1 ? "Retry the one you missed" : "Retry the " + missed.length + " you missed", "primary", () => startDrill([...missed].sort(() => Math.random() - .5), d.from), "reset"));
-      if (d.from === "topics") btns.append(button("Back to Topics", missed.length ? "ghost" : "primary", () => go("topics")));
+      if (d.from === "topics" || d.from === "slides") btns.append(button("Back to " + backText, missed.length ? "ghost" : "primary", () => go(d.from)));
       else btns.append(button("New round", missed.length ? "ghost" : "primary", () => startDrill(), "play"), button("Back to exams", "ghost", () => go("practise")));
       sp.append(btns); hero.append(sp); main.append(hero);
       if (missed.length) {
