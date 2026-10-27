@@ -136,6 +136,7 @@ kbd { font-family: var(--mono); font-size: 10.5px; padding: 1px 5px; border-radi
 .tbtn { background: none; border: 0; padding: 4px 2px; color: var(--ink-2); font-size: 13px; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; white-space: nowrap; }
 .tbtn:hover { color: var(--ink); }
 .tbtn.danger { color: var(--bad); }
+.btn.armed, .tbtn.armed { color: var(--bad); border-color: var(--bad); text-decoration-color: var(--bad); }
 
 /* class chips */
 .chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
@@ -501,7 +502,7 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30px; color: var(--muted); font-size: 12px; font-family: var(--mono); }
 </style>
 </head>
-<body data-v="9">
+<body data-v="10">
 <header class="top">
   <div class="top-in">
     <a class="logo" href="#/practise" aria-label="Block A Notes, home">
@@ -560,7 +561,7 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30
 </main>
 
 <footer>Only people with the invitation link can open this page.</footer>
-<script src="notes.js?v=9"></script>
-<script src="practise.js?v=9"></script>
+<script src="notes.js?v=10"></script>
+<script src="practise.js?v=10"></script>
 </body>
 </html>

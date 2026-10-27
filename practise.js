@@ -88,6 +88,19 @@ const Practise = (() => {
     return p;
   }
   function panel(cls) { return el("div", "panel " + (cls || "")); }
+  // Two-step reset: the first press asks ("Press again to clear"), the second clears; it calms down after 4 s.
+  function resetButton(label, onConfirm, asText) {
+    const b = asText ? el("button", "tbtn", label) : button(label, "ghost small", null, "reset");
+    b.type = "button";
+    const say = (t) => { if (asText) b.textContent = t; else b.lastChild.textContent = t; };
+    let t = null;
+    b.addEventListener("click", () => {
+      if (b.classList.contains("armed")) { clearTimeout(t); onConfirm(); return; }
+      b.classList.add("armed"); say("Press again to clear");
+      t = setTimeout(() => { b.classList.remove("armed"); say(label); }, 4000);
+    });
+    return b;
+  }
   function h2(text, small) { const h = el("h2", "h2", text); if (small) h.append(el("small", null, small)); return h; }
   const xColor = (ex) => "var(--x-" + ex.id + ", var(--accent))";
   const exLabel = (ex) => ex.kind === "demo" ? "His trial exam" : ex.title;
@@ -103,6 +116,11 @@ const Practise = (() => {
     return p;
   }
   const saveProg = (id, p) => store.set(key(id), p);
+  function resetExam(ex) {
+    store.del(key(ex.id));
+    const l = store.get("last"); if (l && l.id === ex.id) store.del("last");
+    go("practise/" + ex.id + "/case");
+  }
 
   /* ---------- content ---------- */
   const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -322,6 +340,9 @@ const Practise = (() => {
       line.append(el("b", null, chosen.size ? [...chosen].sort((a, b) => a - b).map((c) => CLASS_NAMES[c]).join(", ") : "All classes"),
         document.createTextNode(" · " + plural(inClasses.length, "question") + (nNew < inClasses.length ? ", " + nNew + " new" : "")));
       if (chosen.size) line.append(document.createTextNode(" · "), textBtn("clear", () => { store.set("drill:classes", []); render(); }));
+      if (inClasses.some((q) => stats[q.id])) line.append(document.createTextNode(" · "), resetButton(chosen.size ? "reset progress" : "reset all progress", () => {
+        const st = store.get("drill:stats") || {}; inClasses.forEach((q) => delete st[q.id]); store.set("drill:stats", st); render();
+      }, true));
       const opts = el("div", "drillopts");
       const g1 = el("div", "grp"); g1.append(el("span", "kicker", "Questions"), which);
       const g2 = el("div", "grp"); g2.append(el("span", "kicker", "Length"), len);
@@ -358,7 +379,9 @@ const Practise = (() => {
       mode.append(b);
     });
     const timer = el("span", "timer"); timer.id = "xtimer"; timer.hidden = true;
-    rgt.append(timer, mode);
+    rgt.append(timer);
+    if (s.answered || s.aDone || s.written || s.partsDone || p.timerStart) rgt.append(resetButton("Start again", () => resetExam(ex)));
+    rgt.append(mode);
     tt.append(lft, rgt);
     head.append(tt);
     box.append(head);
@@ -708,7 +731,6 @@ const Practise = (() => {
   }
 
   function renderScore(main, ex) {
-    confirmReset.armed = false;
     const p = prog(ex.id), s = score(ex, p);
     const got = s.a + s.b, max = s.aDone * 4 + s.bDone, perc = pct(got, max);
     const hero = panel("scorehero");
@@ -753,11 +775,9 @@ const Practise = (() => {
     }
     const foot = panel("secfoot");
     foot.append(el("span", "small", "Want a clean run? Your answers for this exam are only on this device."));
-    foot.append(button("Start this exam again", "ghost small", () => { if (confirmReset.armed) { store.del(key(ex.id)); confirmReset.armed = false; render(); } else { confirmReset.armed = true; resetBtn.lastChild.textContent = "Press again to clear"; } }, "reset"));
-    const resetBtn = foot.lastChild;
+    foot.append(resetButton("Start this exam again", () => resetExam(ex)));
     main.append(foot);
   }
-  const confirmReset = { armed: false };
 
   /* ---------- slides and book: "Class 7 slides · slide 43" or "Gillingham p. 212" opens right here ---------- */
   // The class decks and the book are encrypted with the group code like the questions (built by
