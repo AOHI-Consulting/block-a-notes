@@ -29,6 +29,8 @@ const Practise = (() => {
     moon: "M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z", star: "M12 3l2.3 5.4 5.7.6-4.3 3.9 1.3 5.6L12 15.6 7 18.5l1.3-5.6L4 9l5.7-.6z",
     book: "M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5", doc: "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6",
     arrow: "M5 12h14M13 6l6 6-6 6", play: "M8 5v14l11-7z", reset: "M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4",
+    eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+    eyeoff: "M9.9 9.9a3 3 0 1 0 4.2 4.2M10.7 5.1A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13.2 13.2 0 0 1-1.7 2.7M6.6 6.6A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.4-1.6M2 2l20 20",
   };
   function icon(name) {
     const s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true");
@@ -150,9 +152,11 @@ const Practise = (() => {
     if (ms <= 0) return null;
     return { d: Math.floor(ms / 86400000), h: Math.floor(ms % 86400000 / 3600000), m: Math.floor(ms % 3600000 / 60000) };
   }
+  // Some people find a ticking countdown stressful: they can hide it (card and header chip) on their device.
+  const countdownOff = () => !!store.get("countdown:off");
   function tickClock() {
     const u = untilExam(), c = $("#clock");
-    if (!u) { c.hidden = true; return; }
+    if (!u || countdownOff()) { c.hidden = true; return; }
     c.hidden = false;
     $("#clockv").textContent = u.d ? u.d + "d " + u.h + "h" : u.h + "h " + u.m + "m";
   }
@@ -178,12 +182,21 @@ const Practise = (() => {
     resume.append(button("Find a topic", "ghost", () => go("topics"), "search"));
     ht.append(resume);
     const cd = panel("count");
-    const u = untilExam();
-    cd.append(el("p", "kicker", u ? "The exam starts in" : "Exam day"));
-    const big = el("div", "big");
-    if (u) [[u.d, "days"], [u.h, "hours"], [u.m, "min"]].forEach(([v, l]) => { const s = el("span", null, String(v)); s.append(el("small", null, l)); big.append(s); });
-    cd.append(big);
-    const when = el("p", "when"); when.append(el("b", null, "Fri 30 Oct, 11:00–14:00"), document.createTextNode(" · room opens 10:30, last entry 11:20 · one PDF of notes, max 20 MB"));
+    const u = untilExam(), calm = countdownOff();
+    const ctop = el("div", "ctop");
+    ctop.append(el("p", "kicker", !u ? "Exam day" : calm ? "The exam" : "The exam starts in"));
+    if (u) {
+      const tg = button(calm ? "Show countdown" : "Hide", "ghost small", () => { store.set("countdown:off", !calm); tickClock(); render(); }, calm ? "eye" : "eyeoff");
+      tg.title = calm ? "Show the days and hours until the exam" : "Hide the countdown here and in the top bar, on this device";
+      ctop.append(tg);
+    }
+    cd.append(ctop);
+    if (u && !calm) {
+      const big = el("div", "big");
+      [[u.d, "days"], [u.h, "hours"], [u.m, "min"]].forEach(([v, l]) => { const s = el("span", null, String(v)); s.append(el("small", null, l)); big.append(s); });
+      cd.append(big);
+    } else cd.append(el("div", "big calm", "Friday 30 October"));
+    const when = el("p", "when"); when.append(el("b", null, u && !calm ? "Fri 30 Oct, 11:00–14:00" : "11:00–14:00"), document.createTextNode(" · room opens 10:30, last entry 11:20 · one PDF of notes, max 20 MB"));
     cd.append(when);
     hero.append(ht, cd);
     box.append(hero);
