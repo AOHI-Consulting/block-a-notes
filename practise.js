@@ -73,7 +73,16 @@ const Practise = (() => {
     if (!list || !list.length) return null;
     const p = el("div", "srcs");
     const lab = el("span", "srclab"); lab.append(icon("book"), document.createTextNode("Look it up")); p.append(lab);
-    sourceLabels(list).forEach((s) => p.append(el("span", "src", s)));
+    const seen = new Set();
+    list.forEach((s) => {
+      const t = sourceLabel(s), m = s.match(/^C(\d) S(\d+)/);
+      if (seen.has(t)) return; seen.add(t);
+      if (m && SL.manifest?.classes?.[m[1]]) {
+        const b = el("button", "src link", t); b.type = "button"; b.title = "Open this slide";
+        b.addEventListener("click", () => openSlides(+m[1], +m[2]));
+        p.append(b);
+      } else p.append(el("span", "src", t));
+    });
     return p;
   }
   function panel(cls) { return el("div", "panel " + (cls || "")); }
@@ -107,6 +116,7 @@ const Practise = (() => {
         base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
       const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(box.iv) }, k, b64(box.data));
       P.content = JSON.parse(new TextDecoder().decode(plain));
+      await slideManifest();
       return P.content;
     })();
     try { return await P.loading; }
@@ -154,7 +164,7 @@ const Practise = (() => {
   function route() {
     const r = parse();
     clearInterval(P.timerTick);
-    closeDrawer();
+    closeDrawer(); closeSlides();
     showTab(r.tab);
     if (r.tab === "notes") return;
     const prev = P.view;
@@ -747,6 +757,78 @@ const Practise = (() => {
   }
   const confirmReset = { armed: false };
 
+  /* ---------- slides: "Class 7 slides · slide 43" opens that slide right here ---------- */
+  // Decks are encrypted with the group code like the questions (built by notes-exchange/build-slides.mjs)
+  // and rendered with pdf.js, so they work the same on phones. "Slide" = page of the PDF.
+  const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/";
+  const SL = { manifest: null, docs: new Map(), lib: null, open: null };
+  async function slideManifest() {
+    try { const r = await fetch("slides/manifest.json", { cache: "no-cache" }); SL.manifest = r.ok ? await r.json() : null; }
+    catch (e) { SL.manifest = null; }
+  }
+  function deck(c) {
+    if (SL.docs.has(c)) return SL.docs.get(c);
+    const pr = (async () => {
+      if (!SL.lib) { SL.lib = await import(PDFJS + "pdf.min.mjs"); SL.lib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.mjs"; }
+      const r = await fetch("slides/c" + c + ".bin?v=" + SL.manifest.classes[c].v);
+      if (!r.ok) throw new Error("fetch " + r.status);
+      const buf = new Uint8Array(await r.arrayBuffer());
+      const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(S.g), "PBKDF2", false, ["deriveKey"]);
+      const k = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: buf.slice(0, 16), iterations: SL.manifest.iter },
+        base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+      const pdf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: buf.slice(16, 28) }, k, buf.slice(28));
+      return SL.lib.getDocument({ data: new Uint8Array(pdf) }).promise;
+    })();
+    SL.docs.set(c, pr);
+    pr.catch(() => SL.docs.delete(c));
+    return pr;
+  }
+  function openSlides(c, n) {
+    closeSlides();
+    const st = { c, n, doc: null, task: null, seq: 0 };
+    const back = el("div", "slideview-back"); back.addEventListener("click", closeSlides);
+    const sh = el("div", "slideview"); sh.setAttribute("role", "dialog"); sh.setAttribute("aria-modal", "true"); sh.setAttribute("aria-label", "Class " + c + " slides");
+    const head = el("div", "sh-head");
+    const title = el("div", "sh-title"); title.append(chip(c), el("b", null, "Class " + c + " slides"));
+    const count = el("span", "sh-count");
+    const x = button("", "ghost small", closeSlides, "x"); x.setAttribute("aria-label", "Close");
+    head.append(title, count, x);
+    const body = el("div", "sh-body"), canvas = el("canvas"), msg = el("p", "loading", "Opening the class " + c + " slides…");
+    body.append(msg);
+    const prev = button("Previous", "ghost small", () => show(st.n - 1), "back");
+    const next = button("Next", "ghost small", () => show(st.n + 1), "next", true);
+    const foot = el("div", "sh-foot"); foot.append(prev, el("span", "hint", "Slide = page of the PDF"), next);
+    sh.append(head, body, foot);
+    document.body.append(back, sh); document.body.classList.add("slideview-open");
+    SL.open = { st, show: (k) => show(k), nodes: [back, sh] };
+    x.focus();
+    async function show(k) {
+      if (!st.doc) return;
+      const my = ++st.seq;
+      st.n = Math.max(1, Math.min(st.doc.numPages, k));
+      count.textContent = "slide " + st.n + " of " + st.doc.numPages;
+      prev.disabled = st.n <= 1; next.disabled = st.n >= st.doc.numPages;
+      const page = await st.doc.getPage(st.n);
+      if (my !== st.seq) return;
+      if (st.task) { st.task.cancel(); st.task = null; }
+      const v1 = page.getViewport({ scale: 1 }), cs = getComputedStyle(body);
+      const w = body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const h = window.matchMedia("(max-width: 760px)").matches ? Infinity : body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      const scale = Math.min(w / v1.width, h / v1.height), dpr = window.devicePixelRatio || 1;
+      const vp = page.getViewport({ scale: scale * dpr });
+      canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+      canvas.style.width = Math.floor(vp.width / dpr) + "px"; canvas.style.height = Math.floor(vp.height / dpr) + "px";
+      st.task = page.render({ canvasContext: canvas.getContext("2d"), viewport: vp });
+      try { await st.task.promise; } catch (e) { /* replaced by a newer page */ }
+    }
+    deck(c).then((doc) => { if (SL.open?.st !== st) return; st.doc = doc; msg.remove(); body.append(canvas); show(n); })
+      .catch(() => { msg.textContent = "Couldn't open the class " + c + " slides. Check your connection and try again."; });
+  }
+  function closeSlides() {
+    if (!SL.open) return;
+    SL.open.nodes.forEach((x) => x.remove()); SL.open = null; document.body.classList.remove("slideview-open");
+  }
+
   /* ---------- drill ---------- */
   const DRILL_SIZES = [5, 10, 20];   // plus "All"; stored as drill:size, 0 = all
   function drillSettings() {
@@ -954,6 +1036,13 @@ const Practise = (() => {
   }
 
   function onKey(e) {
+    if (SL.open) {
+      if (e.key === "Escape") closeSlides();
+      else if (e.key === "ArrowRight") SL.open.show(SL.open.st.n + 1);
+      else if (e.key === "ArrowLeft") SL.open.show(SL.open.st.n - 1);
+      else return;
+      e.preventDefault(); return;
+    }
     if (!keyTarget || S.tab !== "practise" || P.drawer) { if (e.key === "Escape") closeDrawer(); return; }
     const t = e.target, tag = t && t.tagName;
     if (tag === "TEXTAREA" || (tag === "INPUT" && t.type !== "radio") || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -978,6 +1067,7 @@ const Practise = (() => {
       let rs = null, wasWide = window.matchMedia("(min-width: 1180px)").matches;
       window.addEventListener("resize", () => {
         clearTimeout(rs); rs = setTimeout(() => {
+          if (SL.open) SL.open.show(SL.open.st.n);
           const wide = window.matchMedia("(min-width: 1180px)").matches;
           if (wide !== wasWide && P.view.name === "exam" && S.tab === "practise" && document.activeElement?.tagName !== "TEXTAREA") { closeDrawer(); render(); }
           wasWide = wide;
