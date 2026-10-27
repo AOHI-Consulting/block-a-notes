@@ -15,7 +15,7 @@ const Practise = (() => {
     content: null, loading: null, failed: "",
     view: { tab: "practise", name: "home" },
     answers: new Map(), answersAt: new Map(),
-    drill: null, idx: null, tq: "", tclass: 0,
+    drill: null, idx: null, tq: "", tclass: 0, lq: "",
     timerTick: null, drawer: false,
   };
   const root = () => $("#practise");
@@ -29,6 +29,7 @@ const Practise = (() => {
     moon: "M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z", star: "M12 3l2.3 5.4 5.7.6-4.3 3.9 1.3 5.6L12 15.6 7 18.5l1.3-5.6L4 9l5.7-.6z",
     book: "M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5", doc: "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6",
     arrow: "M5 12h14M13 6l6 6-6 6", play: "M8 5v14l11-7z", reset: "M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4",
+    expand: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5", shrink: "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5", plus: "M12 5v14M5 12h14", minus: "M5 12h14",
     eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
     eyeoff: "M9.9 9.9a3 3 0 1 0 4.2 4.2M10.7 5.1A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13.2 13.2 0 0 1-1.7 2.7M6.6 6.6A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.4-1.6M2 2l20 20",
   };
@@ -811,48 +812,173 @@ const Practise = (() => {
   function openDoc(key, n) {
     closeSlides();
     const book = key === "book", c = book ? 0 : +key.slice(1), off = book ? SL.manifest.book.offset || 0 : 0;
-    const what = book ? "the book" : "the class " + c + " slides";
-    const st = { c, n, doc: null, task: null, seq: 0 };
+    const what = book ? "the book" : "the class " + c + " slides", rule = book ? "Page numbers as printed in the book" : "Slide = page of the PDF";
+    const st = { c, n, doc: null, task: null, seq: 0, zoom: 1, full: false };
     const back = el("div", "slideview-back"); back.addEventListener("click", closeSlides);
     const sh = el("div", "slideview"); sh.setAttribute("role", "dialog"); sh.setAttribute("aria-modal", "true"); sh.setAttribute("aria-label", book ? "Gillingham, Tech-Enabled Hospitality" : "Class " + c + " slides");
     const head = el("div", "sh-head");
     const title = el("div", "sh-title");
     if (book) title.append(el("b", null, "Gillingham"), el("span", "small", "Tech-Enabled Hospitality"));
     else title.append(chip(c), el("b", null, "Class " + c + " slides"));
-    const count = el("span", "sh-count");
+    const count = el("span", "sh-count"); count.title = rule;
+    const fs = button("", "ghost small", () => setFull(!st.full), "expand"); fs.setAttribute("aria-label", "Full screen"); fs.title = "Full screen (F)";
     const x = button("", "ghost small", closeSlides, "x"); x.setAttribute("aria-label", "Close");
-    head.append(title, count, x);
+    head.append(title, count, fs, x);
     const body = el("div", "sh-body"), canvas = el("canvas"), msg = el("p", "loading", "Opening " + what + "…");
     body.append(msg);
     const prev = button("Previous", "ghost small", () => show(st.n - 1), "back");
     const next = button("Next", "ghost small", () => show(st.n + 1), "next", true);
-    const foot = el("div", "sh-foot"); foot.append(prev, el("span", "hint", book ? "Page numbers as printed in the book" : "Slide = page of the PDF"), next);
+    const zout = button("", "ghost small", () => setZoom(st.zoom / 1.5), "minus"); zout.setAttribute("aria-label", "Zoom out");
+    const zin = button("", "ghost small", () => setZoom(st.zoom * 1.5), "plus"); zin.setAttribute("aria-label", "Zoom in");
+    const zlab = el("button", "zlab", "100%"); zlab.type = "button"; zlab.title = "Fit to the screen (0)"; zlab.addEventListener("click", () => setZoom(1));
+    const zbox = el("div", "zoombox"); zbox.append(zout, zlab, zin);
+    const mid = el("div", "sh-mid"); mid.append(zbox, el("span", "hint", rule));
+    const foot = el("div", "sh-foot"); foot.append(prev, mid, next);
     sh.append(head, body, foot);
     document.body.append(back, sh); document.body.classList.add("slideview-open");
-    SL.open = { st, show: (k) => show(k), nodes: [back, sh] };
+    SL.open = { st, show: (k) => show(k), zoom: (f) => setZoom(f ? st.zoom * f : 1), full: () => setFull(!st.full), nodes: [back, sh] };
     x.focus();
-    async function show(k) {
+
+    // Full screen fills the window (and the whole screen where the browser allows it); turn a phone sideways for big slides.
+    function setFull(on) {
+      st.full = on; sh.classList.toggle("full", on);
+      fs.replaceChildren(icon(on ? "shrink" : "expand")); fs.setAttribute("aria-label", on ? "Leave full screen" : "Full screen");
+      if (on && sh.requestFullscreen && !document.fullscreenElement) sh.requestFullscreen().catch(() => {});
+      if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      show(st.n, true);
+    }
+    sh.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && st.full) setFull(false); });
+
+    // Zoom keeps the point under the fingers (or the middle) where it was.
+    function setZoom(z, fx, fy) {
+      z = Math.max(1, Math.min(4, z));
+      const r = body.getBoundingClientRect(), px = fx ?? r.left + r.width / 2, py = fy ?? r.top + r.height / 2;
+      const rx = (body.scrollLeft + px - r.left) / body.scrollWidth, ry = (body.scrollTop + py - r.top) / body.scrollHeight;
+      st.zoom = z;
+      show(st.n, true).then(() => { body.scrollLeft = rx * body.scrollWidth - (px - r.left); body.scrollTop = ry * body.scrollHeight - (py - r.top); });
+    }
+
+    async function show(k, keep) {
       if (!st.doc) return;
       const my = ++st.seq;
-      st.n = Math.max(1, Math.min(st.doc.numPages, k));
+      k = Math.max(1, Math.min(st.doc.numPages, k));
+      if (!keep && k !== st.n) st.zoom = 1;   // a new page starts fitted to the screen
+      st.n = k;
       count.textContent = book ? (st.n > off ? "p. " + (st.n - off) : "front matter") + " · " + st.n + "/" + st.doc.numPages : "slide " + st.n + " of " + st.doc.numPages;
       prev.disabled = st.n <= 1; next.disabled = st.n >= st.doc.numPages;
+      zlab.textContent = Math.round(st.zoom * 100) + "%"; zout.disabled = st.zoom <= 1; zin.disabled = st.zoom >= 4;
+      body.classList.toggle("zoomed", st.zoom > 1);
       const page = await st.doc.getPage(st.n);
       if (my !== st.seq) return;
       if (st.task) { st.task.cancel(); st.task = null; }
       const v1 = page.getViewport({ scale: 1 }), cs = getComputedStyle(body);
       const w = body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-      const h = window.matchMedia("(max-width: 760px)").matches ? Infinity : body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-      const scale = Math.min(w / v1.width, h / v1.height), dpr = window.devicePixelRatio || 1;
-      const vp = page.getViewport({ scale: scale * dpr });
+      const h = window.matchMedia("(max-width: 760px)").matches && !st.full ? Infinity : body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      const fit = Math.min(w / v1.width, h / v1.height);
+      let dpr = window.devicePixelRatio || 1;
+      const px = (fit * st.zoom * dpr) ** 2 * v1.width * v1.height;
+      if (px > 16e6) dpr *= Math.sqrt(16e6 / px);   // stay under phones' canvas limit (about 16 million pixels)
+      const vp = page.getViewport({ scale: fit * st.zoom * dpr });
       canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
-      canvas.style.width = Math.floor(vp.width / dpr) + "px"; canvas.style.height = Math.floor(vp.height / dpr) + "px";
+      canvas.style.width = Math.floor(v1.width * fit * st.zoom) + "px"; canvas.style.height = Math.floor(v1.height * fit * st.zoom) + "px";
       st.task = page.render({ canvasContext: canvas.getContext("2d"), viewport: vp });
       try { await st.task.promise; } catch (e) { /* replaced by a newer page */ }
     }
-    deck(key).then((doc) => { if (SL.open?.st !== st) return; st.doc = doc; msg.remove(); body.append(canvas); show(n); })
+
+    // Touch: pinch to zoom, double-tap to zoom in or back out, swipe sideways for the next slide.
+    let t0 = null, pinch = null, lastTap = 0, touched = 0;
+    const gap = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    body.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 2) {
+        const [a, b] = e.touches, cr = canvas.getBoundingClientRect();
+        pinch = { d: gap(a, b), z: st.zoom, r: 1, cx: (a.clientX + b.clientX) / 2, cy: (a.clientY + b.clientY) / 2 };
+        canvas.style.transformOrigin = (pinch.cx - cr.left) + "px " + (pinch.cy - cr.top) + "px"; t0 = null;
+      } else if (e.touches.length === 1 && !pinch) t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+    }, { passive: true });
+    body.addEventListener("touchmove", (e) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      pinch.r = Math.max(1 / pinch.z, Math.min(4 / pinch.z, gap(e.touches[0], e.touches[1]) / pinch.d));
+      canvas.style.transform = "scale(" + pinch.r + ")";
+    }, { passive: false });
+    body.addEventListener("touchend", (e) => {
+      touched = Date.now();
+      if (pinch) { if (e.touches.length < 2) { const p = pinch; pinch = null; canvas.style.transform = ""; setZoom(p.z * p.r, p.cx, p.cy); } return; }
+      if (!t0 || e.changedTouches.length !== 1) return;
+      const u = e.changedTouches[0], dx = u.clientX - t0.x, dy = u.clientY - t0.y, dt = Date.now() - t0.t; t0 = null;
+      if (st.zoom === 1 && Math.abs(dx) > 50 && Math.abs(dy) < 40 && dt < 600) { show(st.n + (dx < 0 ? 1 : -1)); return; }
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && dt < 250) {
+        if (Date.now() - lastTap < 300) { lastTap = 0; e.preventDefault(); setZoom(st.zoom > 1 ? 1 : 2.5, u.clientX, u.clientY); }
+        else lastTap = Date.now();
+      }
+    }, { passive: false });
+    canvas.addEventListener("dblclick", (e) => { if (Date.now() - touched > 800) setZoom(st.zoom > 1 ? 1 : 2.5, e.clientX, e.clientY); });
+
+    deck(key).then((doc) => { if (SL.open?.st !== st) return; st.doc = doc; msg.remove(); body.append(canvas); show(n, true); })
       .catch(() => { msg.textContent = "Couldn't open " + what + ". Check your connection and try again."; });
   }
+
+  /* Search across the text of every slide and book page (slides/text.bin, built by extract-slide-text.py). */
+  // British and American spellings fold together (organise/organize), applied to the text and the search alike
+  const fold = (t) => t.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/is(e|ed|es|ing|ation|ations)\b/g, "iz$1");
+  function slideText() {
+    if (SL.text) return SL.text;
+    SL.text = (async () => {
+      const r = await fetch("slides/text.bin?v=" + SL.manifest.text.v);
+      if (!r.ok) throw new Error("fetch " + r.status);
+      const buf = new Uint8Array(await r.arrayBuffer());
+      const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(S.g), "PBKDF2", false, ["deriveKey"]);
+      const k = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: buf.slice(0, 16), iterations: SL.manifest.iter },
+        base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+      const gz = await crypto.subtle.decrypt({ name: "AES-GCM", iv: buf.slice(16, 28) }, k, buf.slice(28));
+      const pages = JSON.parse(await new Response(new Blob([gz]).stream().pipeThrough(new DecompressionStream("gzip"))).text());
+      return { pages, folded: Object.fromEntries(Object.entries(pages).map(([key, ps]) => [key, ps.map(fold)])) };
+    })();
+    SL.text.catch(() => { SL.text = null; });
+    return SL.text;
+  }
+  function snippetOf(orig, folded, terms) {
+    let at = -1;
+    for (const w of terms) { const i = folded.indexOf(w); if (i >= 0 && (at < 0 || i < at)) at = i; }
+    const a = Math.max(0, at - 70), b = Math.min(orig.length, at + 160);
+    return (a > 0 ? "…" : "") + orig.slice(a, b).trim() + (b < orig.length ? "…" : "");
+  }
+  function renderHits(box, T, q) {
+    // search by word stem: "network effects" finds "network effect", "irritation" finds "irritating" and "irritant"
+    const stem = (w) => {
+      if (w.length < 5) return w;
+      let t = w.replace(/(ations?|ating|ated|ates|ingly|ings?|ions?|ants?|ences?|ances?|ments?|ers?|ed|ies|es|s)$/, "");
+      if (t.length < 4) t = w.replace(/s$/, "");
+      return t.length > 4 ? t.replace(/e$/, "") : t;
+    };
+    const terms = [...new Set(fold(q).split(/\s+/).filter((t) => t.length > 1).map(stem))];
+    if (!terms.length) return;
+    const keys = [...Object.keys(T.pages).filter((k) => k !== "book").sort(), "book"].filter((k) => T.pages[k]);
+    const groups = []; let total = 0;
+    for (const key of keys) {
+      const hits = [];
+      T.folded[key].forEach((t, i) => { if (terms.every((w) => t.includes(w))) hits.push(i + 1); });
+      if (hits.length) { groups.push([key, hits]); total += hits.length; }
+    }
+    box.append(el("p", "small", total ? plural(total, "page") + " with " + (terms.length > 1 ? "all of these words" : "“" + q + "”") + (groups.length > 1 ? ", in " + groups.length + " places" : "")
+      : "Nothing found for “" + q + "”. Try fewer or shorter words."));
+    for (const [key, hits] of groups) {
+      const book = key === "book", c = book ? 0 : +key.slice(1), off = book ? SL.manifest.book.offset || 0 : 0;
+      const sec = el("section", "sect");
+      const hd = h2(book ? "Gillingham, the book" : "Class " + c + " · " + CLASS_NAMES[c], plural(hits.length, book ? "page" : "slide"));
+      if (!book) hd.prepend(chip(c));
+      const list = panel("hitlist");
+      hits.slice(0, 25).forEach((n) => {
+        const b = el("button", "hit"); b.type = "button";
+        const snip = highlight(el("span", "hs"), snippetOf(T.pages[key][n - 1], T.folded[key][n - 1], terms), terms);
+        b.append(el("span", "hw", book ? (n > off ? "p. " + (n - off) : "front matter") : "slide " + n), snip, icon("next"));
+        b.addEventListener("click", () => openDoc(key, n)); list.append(b);
+      });
+      if (hits.length > 25) list.append(el("p", "small more", "…and " + (hits.length - 25) + " more. Add a word to narrow it down."));
+      sec.append(hd, list); box.append(sec);
+    }
+  }
+
   /* The Slides tab: every deck and the book, with the slides the practice questions cite most. */
   function citations() {
     const by = {}, book = new Map();
@@ -871,6 +997,27 @@ const Practise = (() => {
       el("p", "lede", "Every class deck and Gillingham's book, opened right here. Under each deck: the slides the practice questions cite most."));
     box.append(head);
     if (!SL.manifest) { box.append(el("p", "loading", "The slides can't be loaded right now. Check your connection and reload.")); return; }
+    const lib = el("div", "libbody"), results = el("div", "libres");
+    if (SL.manifest.text) {
+      const sb = el("div", "searchbox"); sb.append(icon("search"));
+      const input = el("input"); input.type = "search"; input.value = P.lq || "";
+      input.placeholder = "Search the slides and the book: GDPR, network effects, Marchetti…"; input.setAttribute("aria-label", "Search the slides and the book");
+      sb.append(input); box.append(sb);
+      let tm = null;
+      const run = async () => {
+        const q = input.value.trim(); P.lq = q;
+        lib.hidden = !!q; results.textContent = "";
+        if (!q) return;
+        results.append(el("p", "loading", "Searching…"));
+        let T;
+        try { T = await slideText(); } catch (e) { results.textContent = ""; results.append(el("p", "loading", "The search can't load right now. Check your connection.")); return; }
+        if (input.value.trim() !== q) return;
+        results.textContent = ""; renderHits(results, T, q);
+      };
+      input.addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(run, 180); });
+      if (P.lq) run();
+    }
+    box.append(results, lib);
     const { by, book } = citations();
     const grid = el("div", "libgrid");
     for (let c = 1; c <= 9; c++) {
@@ -894,7 +1041,7 @@ const Practise = (() => {
       foot.append(el("span", "small", total ? plural(total, "reference") : "No references yet"), button("Open slides", "small", () => openDoc("c" + c, 1), "book"));
       card.append(foot); grid.append(card);
     }
-    box.append(grid);
+    lib.append(grid);
     if (SL.manifest.book) {
       const off = SL.manifest.book.offset || 0, total = [...book.values()].reduce((sum, x) => sum + x, 0);
       const bk = panel("libbook"), top = el("div", "lc-top"), t = el("div", "lc-t");
@@ -909,7 +1056,7 @@ const Practise = (() => {
         if (n) b.title = n + (n === 1 ? " reference" : " references") + " in the questions";
         b.addEventListener("click", () => openDoc("book", p + off)); ch.append(b);
       });
-      bk.append(el("span", "kicker", "Chapters"), ch); box.append(bk);
+      bk.append(el("span", "kicker", "Chapters"), ch); lib.append(bk);
     }
   }
   function closeSlides() {
@@ -1126,9 +1273,13 @@ const Practise = (() => {
 
   function onKey(e) {
     if (SL.open) {
-      if (e.key === "Escape") closeSlides();
+      if (e.key === "Escape") { if (SL.open.st.full) SL.open.full(); else closeSlides(); }
       else if (e.key === "ArrowRight") SL.open.show(SL.open.st.n + 1);
       else if (e.key === "ArrowLeft") SL.open.show(SL.open.st.n - 1);
+      else if (e.key === "+" || e.key === "=") SL.open.zoom(1.5);
+      else if (e.key === "-") SL.open.zoom(1 / 1.5);
+      else if (e.key === "0") SL.open.zoom(0);
+      else if (e.key === "f" || e.key === "F") SL.open.full();
       else return;
       e.preventDefault(); return;
     }

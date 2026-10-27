@@ -345,12 +345,32 @@ body.slideview-open { overflow: hidden; }
 .sh-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
 .sh-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; font-size: 15px; }
 .sh-count { font-family: var(--mono); font-size: 12.5px; color: var(--muted); white-space: nowrap; }
-.sh-body { display: grid; place-items: center; padding: 16px; overflow: auto; background: var(--panel-2); }
+.sh-body { display: grid; padding: 16px; overflow: auto; background: var(--panel-2); touch-action: pan-x pan-y; overscroll-behavior: contain; }
+.sh-body > * { margin: auto; }
 .sh-body canvas { display: block; border-radius: 8px; box-shadow: var(--shadow); background: #fff; }
+.sh-body.zoomed canvas { border-radius: 0; }
+.sh-mid { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.zoombox { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; }
+.zoombox .btn { border: 0; padding: 5px 8px; }
+.zlab { min-width: 50px; border: 0; background: none; color: var(--ink-2); font-family: var(--mono); font-size: 12px; padding: 4px 2px; }
+.slideview.full { inset: 0; width: auto; max-height: none; border: 0; border-radius: 0; grid-template-rows: auto minmax(0, 1fr) auto; }
+.slideview.full .sh-body { padding: 6px; background: #0b0d12; }
+.libbody:not([hidden]), .libres { display: grid; gap: 22px; }
+.libres:empty { display: none; }
+.hitlist { padding: 6px 8px; display: grid; }
+.hit { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 12px; align-items: start; text-align: left; padding: 10px 12px; border-radius: 10px; border: 0; background: none; color: var(--ink); width: 100%; }
+.hit:hover { background: var(--panel-2); }
+.hw { font-family: var(--mono); font-size: 12px; color: var(--accent-ink); padding-top: 2px; white-space: nowrap; }
+.hs { font-size: 13.5px; color: var(--ink-2); line-height: 1.5; overflow-wrap: anywhere; }
+.hit svg { width: 16px; height: 16px; color: var(--muted); margin-top: 3px; }
+.hitlist .more { padding: 6px 12px 10px; }
 .sh-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); }
 @media (max-width: 760px) {
   .slideview { top: auto; left: 0; width: auto; max-height: 88vh; border-left: 0; border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; grid-template-rows: auto auto auto; }
   .sh-body { padding: 12px; }
+  .sh-foot .hint { display: none; }
+  .hit { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .hw { grid-column: 1 / -1; }
   .sh-title .small { display: none; }
 }
 .secfoot { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 14px 18px; }
@@ -521,7 +541,7 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30px; color: var(--muted); font-size: 12px; font-family: var(--mono); }
 </style>
 </head>
-<body data-v="11">
+<body data-v="12">
 <header class="top">
   <div class="top-in">
     <a class="logo" href="#/practise" aria-label="Block A Notes, home">
@@ -581,7 +601,7 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30
 </main>
 
 <footer>Only people with the invitation link can open this page.</footer>
-<script src="notes.js?v=11"></script>
-<script src="practise.js?v=11"></script>
+<script src="notes.js?v=12"></script>
+<script src="practise.js?v=12"></script>
 </body>
 </html>
