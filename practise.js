@@ -1,25 +1,65 @@
-/* Practice for the LDD exam: the lecturer's demo exam, mock exams in the same format, and a
-   quick multiple-choice drill. The questions arrive encrypted (content.enc) and open with the
-   group code from the invitation link, so the public repository holds nothing readable.
-   Progress stays on this device; an open answer reaches the group only when you share it. */
+/* Practice for the LDD exam: the lecturer's trial exam, mock exams in the same format, a quick
+   multiple-choice drill and a searchable topic index. The questions arrive encrypted
+   (content.enc) and open with the group code from the invitation link, so the public repository
+   holds nothing readable. Progress stays on this device; an open answer reaches the group only
+   when you share it. Every view has its own address (#/practise/mock-c/a/3), so Back works. */
 
 const Practise = (() => {
   const EXAM_AT = new Date("2026-10-30T11:00:00+01:00");
   const LETTERS = ["A", "B", "C", "D", "E"];
-  const BANDS = [[85, "Excellent"], [70, "Good"], [55, "Sufficient (pass)"], [0, "Insufficient"]];
   const CLASS_NAMES = {
     1: "Customer experience", 2: "Mobility & supply chain", 3: "Future of work", 4: "Payments",
     5: "Platforms & ecosystems", 6: "Smart buildings", 7: "Data & AI", 8: "Resilience", 9: "Transformation & tech stack",
   };
   const P = {
     content: null, loading: null, failed: "",
-    view: { name: "home" },          // home | exam | drill
-    answers: new Map(),              // examId -> [{qkey, page, name, body, updated}]
-    answersAt: new Map(),
-    drill: null,
-    timerTick: null,
+    view: { tab: "practise", name: "home" },
+    answers: new Map(), answersAt: new Map(),
+    drill: null, idx: null, tq: "", tclass: 0,
+    timerTick: null, drawer: false,
   };
   const root = () => $("#practise");
+
+  /* ---------- small builders ---------- */
+  const NS = "http://www.w3.org/2000/svg";
+  const ICONS = {
+    back: "M15 18l-6-6 6-6", next: "M9 6l6 6-6 6", check: "M5 12.5l4.5 4.5L19 7.5", x: "M6 6l12 12M18 6L6 18",
+    clock: "M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4",
+    sun: "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
+    moon: "M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z", star: "M12 3l2.3 5.4 5.7.6-4.3 3.9 1.3 5.6L12 15.6 7 18.5l1.3-5.6L4 9l5.7-.6z",
+    book: "M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5", doc: "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6",
+    arrow: "M5 12h14M13 6l6 6-6 6", play: "M8 5v14l11-7z", reset: "M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4",
+  };
+  function icon(name) {
+    const s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true");
+    s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", "1.9");
+    s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round");
+    const p = document.createElementNS(NS, "path"); p.setAttribute("d", ICONS[name]); s.append(p); return s;
+  }
+  function button(text, cls, fn, ic, icAfter) {
+    const b = el("button", "btn " + (cls || "")); b.type = "button";
+    if (ic && !icAfter) b.append(icon(ic));
+    b.append(document.createTextNode(text));
+    if (ic && icAfter) b.append(icon(ic));
+    if (fn) b.addEventListener("click", fn);
+    return b;
+  }
+  function textBtn(text, fn, cls) { const b = el("button", "tbtn" + (cls ? " " + cls : ""), text); b.type = "button"; b.addEventListener("click", fn); return b; }
+  function chip(c) { const s = el("span", "chip", "C" + c); s.style.setProperty("--cc", "var(--c" + c + ")"); s.title = "Class " + c + ": " + (CLASS_NAMES[c] || ""); return s; }
+  function chips(classes) { const w = el("span", "chips"); (classes || []).forEach((c) => w.append(chip(c))); return w; }
+  function sourcesLine(list) {
+    if (!list || !list.length) return null;
+    const p = el("div", "srcs");
+    const lab = el("span", "srclab"); lab.append(icon("book"), document.createTextNode("Look it up")); p.append(lab);
+    list.forEach((s) => p.append(el("span", "src", s)));
+    return p;
+  }
+  function panel(cls) { return el("div", "panel " + (cls || "")); }
+  function h2(text, small) { const h = el("h2", "h2", text); if (small) h.append(el("small", null, small)); return h; }
+  const xColor = (ex) => "var(--x-" + ex.id + ", var(--accent))";
+  const exLabel = (ex) => ex.kind === "demo" ? "His trial exam" : ex.title;
+  const pct = (a, b) => b ? Math.round(100 * a / b) : 0;
+  function band(p) { return p >= 85 ? ["Excellent", "good"] : p >= 70 ? ["Good", "good"] : p >= 55 ? ["Pass", ""] : ["Below pass", "bad"]; }
 
   /* ---------- local progress ---------- */
   const key = (id) => "px:" + id;
@@ -48,410 +88,482 @@ const Practise = (() => {
       return P.content;
     })();
     try { return await P.loading; }
-    catch (e) { P.loading = null; P.failed = String(e && e.name === "OperationError" ? "key" : "net"); throw e; }
+    catch (e) { P.loading = null; P.failed = e && e.name === "OperationError" ? "key" : "net"; throw e; }
   }
   const exams = () => (P.content?.exams || []);
   const examById = (id) => exams().find((x) => x.id === id);
+  const partsOf = (ex) => ex.open.flatMap((o) => o.parts.map((pt) => ({ o, pt, k: o.id + pt.id })));
 
   /* ---------- scoring ---------- */
+  function shownA(p, q) { return !!p.finishedA || (p.mode !== "exam" && !!p.checked[q.id]); }
   function score(ex, p) {
-    let a = 0, aDone = 0;
-    const revealAll = !!p.finishedA;
+    let a = 0, aDone = 0, answered = 0;
     ex.mcq.forEach((q) => {
-      const shown = revealAll || p.checked[q.id];
-      if (shown && p.mcq[q.id]) { aDone++; if (p.mcq[q.id] === q.answer) a += 4; }
-      else if (shown) aDone++;
+      if (p.mcq[q.id]) answered++;
+      if (p.finishedA || p.checked[q.id]) { aDone++; if (p.mcq[q.id] === q.answer) a += 4; }
     });
-    let b = 0, bDone = 0, bMax = 0;
-    ex.open.forEach((o) => o.parts.forEach((pt) => {
-      bMax += pt.points;
-      const st = p.open[o.id + pt.id];
-      if (st && st.marked) { bDone += pt.points; b += (st.ticks || []).reduce((s, i) => s + (pt.guide[i]?.pts || 0), 0); }
-    }));
-    return { a, aDone, aMax: ex.mcq.length * 4, b, bDone, bMax };
+    let b = 0, bDone = 0, parts = 0, partsDone = 0, written = 0;
+    partsOf(ex).forEach(({ pt, k }) => {
+      parts++;
+      const st = p.open[k];
+      if (st && (st.text || "").trim()) written++;
+      if (st && st.marked) { partsDone++; bDone += pt.points; b += (st.ticks || []).reduce((s, i) => s + (pt.guide[i]?.pts || 0), 0); }
+    });
+    return { a, aDone, answered, b, bDone, parts, partsDone, written };
   }
-  const band = (pct) => BANDS.find(([min]) => pct >= min)[1];
 
-  /* ---------- small builders ---------- */
-  function chips(classes) {
-    const w = el("span", "chips");
-    (classes || []).forEach((c) => { const s = el("span", "chip", "C" + c); s.title = "Class " + c + ": " + (CLASS_NAMES[c] || ""); w.append(s); });
-    return w;
+  /* ---------- routing ---------- */
+  function parse() {
+    const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
+    const seg = h.split("/").filter(Boolean);
+    if (seg[0] === "notes") return { tab: "notes" };
+    if (seg[0] === "topics") return { tab: "topics", name: "topics" };
+    if (seg[0] === "drill") return { tab: "practise", name: "drill" };
+    if (seg[0] === "practise" && seg[1]) {
+      const sec = ["case", "a", "b", "score"].includes(seg[2]) ? seg[2] : "case";
+      return { tab: "practise", name: "exam", id: seg[1], sec, n: parseInt(seg[3], 10) || 0 };
+    }
+    return { tab: "practise", name: "home" };
   }
-  function sourcesLine(list) {
-    if (!list || !list.length) return null;
-    const p = el("p", "srcs");
-    p.append(el("span", "srclab", "Look it up"));
-    list.forEach((s) => p.append(el("span", "src", s)));
-    return p;
+  function go(path) {
+    const h = "#/" + path;
+    if (location.hash === h) route(); else location.hash = h;
   }
-  function button(text, cls, fn) { const b = el("button", "btn " + (cls || "ghost"), text); b.type = "button"; if (fn) b.addEventListener("click", fn); return b; }
-  function textBtn(text, fn, cls) { const b = el("button", "tbtn" + (cls ? " " + cls : ""), text); b.type = "button"; b.addEventListener("click", fn); return b; }
-  function go(view) {
-    P.view = view;
+  function route() {
+    const r = parse();
     clearInterval(P.timerTick);
-    document.body.classList.toggle("in-exam", view.name !== "home");
+    closeDrawer();
+    showTab(r.tab);
+    if (r.tab === "notes") return;
+    const prev = P.view;
+    P.view = r;
+    if (r.name === "exam") store.set("last", { path: location.hash.slice(2), id: r.id, sec: r.sec });
+    document.getElementById("page").classList.toggle("wide", r.name === "exam");
     render();
-    window.scrollTo({ top: 0 });
+    const same = prev && prev.name === r.name && prev.id === r.id && prev.sec === r.sec && prev.n === r.n;
+    if (!same) window.scrollTo({ top: 0 });
   }
+
+  /* ---------- header bits ---------- */
+  function untilExam() {
+    const ms = EXAM_AT - Date.now();
+    if (ms <= 0) return null;
+    return { d: Math.floor(ms / 86400000), h: Math.floor(ms % 86400000 / 3600000), m: Math.floor(ms % 3600000 / 60000) };
+  }
+  function tickClock() {
+    const u = untilExam(), c = $("#clock");
+    if (!u) { c.hidden = true; return; }
+    c.hidden = false;
+    $("#clockv").textContent = u.d ? u.d + "d " + u.h + "h" : u.h + "h " + u.m + "m";
+  }
+  function isDark() {
+    const t = document.documentElement.dataset.theme;
+    return t ? t === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  function paintTheme() { const b = $("#theme"); b.textContent = ""; b.append(icon(isDark() ? "sun" : "moon")); b.title = isDark() ? "Light mode" : "Dark mode"; }
 
   /* ---------- home ---------- */
-  function daysLeft() {
-    const ms = EXAM_AT - Date.now();
-    if (ms <= 0) return "Exam day";
-    const d = Math.floor(ms / 86400000), h = Math.floor((ms % 86400000) / 3600000);
-    return d > 0 ? d + (d === 1 ? " day " : " days ") + h + " h to go" : h + " h to go";
-  }
-
   function renderHome(box) {
-    const top = el("section", "pintro");
-    const facts = el("div", "facts");
-    const f1 = el("div", "fact"); f1.append(el("span", "fk", "The exam"), el("b", null, "Fri 30 Oct, 11:00–14:00"), el("span", "fs", daysLeft() + " · room opens 10:30"));
-    const f2 = el("div", "fact"); f2.append(el("span", "fk", "Format"), el("b", null, "One case · 12 MC + 2 open"), el("span", "fs", "48 + 52 points · 3 hours · open book"));
-    const f3 = el("div", "fact"); f3.append(el("span", "fk", "Pass"), el("b", null, "55 of 100"), el("span", "fs", "70 good · 85 excellent (his trial-exam scale)"));
-    facts.append(f1, f2, f3);
-    top.append(facts);
+    const hero = el("section", "hero");
+    const ht = el("div", "hero-text");
+    ht.append(el("p", "kicker", "Digital Developments · individual exam"), el("h1", null, "Practise for Friday's exam"),
+      el("p", "lede", "His trial exam with his answer key, three mock exams in the same format and a quick drill by class. Every answer tells you where to look it up."));
+    const resume = el("div", "resume");
+    const last = store.get("last");
+    const lastEx = last && examById(last.id);
+    if (lastEx) {
+      const where = { case: "the case", a: "Section A", b: "Section B", score: "your score" }[last.sec] || "the case";
+      resume.append(button("Continue " + (lastEx.kind === "demo" ? "his trial exam" : lastEx.title) + " · " + where, "primary", () => go(last.path), "play"));
+    } else resume.append(button("Start with his trial exam", "primary", () => go("practise/demo/case"), "play"));
+    resume.append(button("Find a topic", "ghost", () => go("topics"), "search"));
+    ht.append(resume);
+    const cd = panel("count");
+    const u = untilExam();
+    cd.append(el("p", "kicker", u ? "The exam starts in" : "Exam day"));
+    const big = el("div", "big");
+    if (u) [[u.d, "days"], [u.h, "hours"], [u.m, "min"]].forEach(([v, l]) => { const s = el("span", null, String(v)); s.append(el("small", null, l)); big.append(s); });
+    cd.append(big);
+    const when = el("p", "when"); when.append(el("b", null, "Fri 30 Oct, 11:00–14:00"), document.createTextNode(" · room opens 10:30, last entry 11:20 · one PDF of notes, max 20 MB"));
+    cd.append(when);
+    hero.append(ht, cd);
+    box.append(hero);
 
-    const how = el("details", "how");
-    how.append(el("summary", null, "How he marks the open questions"));
+    const tiles = el("section", "tiles");
+    [["Section A", "12 multiple choice", "4 points each, 48 in total · about 30 minutes"],
+      ["Section B", "2 open questions", "25 + 27 points, with parts a–d · about 75 minutes each"],
+      ["Grade", "Pass at 55", "70 good · 85 excellent · his trial-exam scale"]].forEach(([k, v, s]) => {
+      const t = panel("tile"); t.append(el("p", "kicker", k), el("div", "val", v), el("p", null, s)); tiles.append(t);
+    });
+    box.append(tiles);
+
+    const mk = panel("marks");
+    mk.append(h2("How he marks the open questions", "from his answer key and the class 8 rubric"));
     const ol = el("ol");
-    ["Use a concept from the lectures or the Gillingham book, and use it accurately.",
-      "Apply it explicitly to evidence from the case: the numbers, the people, the exhibits.",
-      "Show judgement: make a choice and justify it."].forEach((t) => ol.append(el("li", null, t)));
-    how.append(ol,
-      el("p", null, "A purely descriptive answer, or one that only restates the case, earns at most half the points. Other relevant frameworks get credit if you apply them correctly."),
-      el("p", null, "Timing he suggests: about 30 minutes for the 12 multiple-choice questions, about 75 minutes per open question, and time to read the case and check."),
-      el("p", null, "A pattern in his trial exam: in all 12 multiple-choice questions the right answer was also the most complete option, the one that joins technology with the business model, data, people or governance. Don't count on it; read every option."),
-      el("p", "small", "From his answer key for the trial exam and the individual-exam rubric on slide 63 of the class 8 deck."));
-    top.append(how);
-    box.append(top);
+    [["Use a course concept", "From the lectures or Gillingham, named and used accurately."],
+      ["Apply it to the case", "Use the case's numbers, people and exhibits as evidence."],
+      ["Make a justified choice", "Show judgement: decide, and say why."]].forEach(([b, s]) => { const li = el("li"); const d = el("div"); d.append(el("b", null, b), el("span", null, s)); li.append(d); ol.append(li); });
+    mk.append(ol);
+    const n1 = el("p", "note"); n1.append(icon("star"), el("span", null, "A purely descriptive answer, or one that only restates the case, earns at most half the points. In his trial exam the right multiple-choice option was also the most complete one, joining technology with the business, data, people or governance. Don't count on it; read every option."));
+    mk.append(n1);
+    box.append(mk);
 
-    box.append(el("h2", "sect", "Full exams"));
-    const grid = el("div", "cards");
+    const xs = el("section", "sect");
+    xs.append(h2("Full exams", "a case, 12 multiple choice and 2 open questions"));
+    const grid = el("div", "xgrid");
     exams().forEach((ex) => {
       const p = prog(ex.id), s = score(ex, p);
-      const c = el("button", "card"); c.type = "button";
-      c.addEventListener("click", () => go({ name: "exam", id: ex.id, tab: "case" }));
-      const tag = el("span", "ctag" + (ex.kind === "demo" ? " his" : ""), ex.kind === "demo" ? "His trial exam" : ex.title);
-      c.append(tag, el("b", "cname", ex.company), el("span", "cline", ex.tagline));
-      const meta = el("span", "cmeta");
-      meta.append(chips(ex.focus));
-      const done = s.aDone + (s.bDone ? 1 : 0);
-      meta.append(el("span", "cprog", done ? "A " + s.a + "/" + s.aMax + (s.bDone ? " · B " + s.b + "/" + s.bDone : "") : "Not started"));
-      c.append(meta);
+      const c = el("button", "xcard"); c.type = "button"; c.style.setProperty("--x", xColor(ex));
+      c.addEventListener("click", () => { const l = store.get("last"); go(l && l.id === ex.id ? l.path : "practise/" + ex.id + "/case"); });
+      const row = el("div", "row");
+      const started = s.answered || s.aDone || s.written || s.partsDone;
+      const done = s.aDone === 12 && s.partsDone === s.parts;
+      const total = s.a + s.b, max = s.aDone * 4 + s.bDone;
+      row.append(el("span", "tag", exLabel(ex)), el("span", "state" + (done ? " done" : started ? " on" : ""), done ? total + " / 100" : started ? "In progress" : "Not started"));
+      c.append(row, el("h3", null, ex.company), el("p", null, ex.tagline));
+      const xp = el("div", "xprog");
+      const bar = el("div", "bar"); const fill = el("i"); fill.style.width = pct(s.aDone + s.partsDone, 12 + s.parts) + "%"; bar.append(fill);
+      const meta = el("div", "meta"); meta.append(el("span", null, "A " + s.aDone + "/12 · B " + s.partsDone + "/" + s.parts), el("span", null, max ? pct(total, max) + "% so far" : ""));
+      xp.append(bar, meta);
+      c.append(chips(ex.focus), xp);
       grid.append(c);
     });
-    box.append(grid);
+    xs.append(grid);
+    box.append(xs);
 
-    box.append(el("h2", "sect", "Quick drill"));
-    const d = el("div", "drillcard");
+    const ds = el("section", "sect");
+    ds.append(h2("Quick drill", "10 questions at a time, no case, instant feedback"));
+    const db = panel("drillbox");
     const pool = P.content.drill || [];
-    d.append(el("p", null, "Ten multiple-choice questions at a time, without a case, on the frameworks from each class. You see the answer and where to look it up after each one."));
-    const pick = el("div", "picker");
+    const stats = store.get("drill:stats") || {};
     const chosen = new Set(store.get("drill:classes") || []);
-    for (let c = 1; c <= 9; c++) {
-      const n = pool.filter((q) => q.classes.includes(c)).length;
-      const b = el("button", "pick", c + " · " + CLASS_NAMES[c]); b.type = "button";
-      b.setAttribute("aria-pressed", String(chosen.has(c)));
-      b.title = n + " questions";
-      b.disabled = !n;
-      b.addEventListener("click", () => {
-        chosen.has(c) ? chosen.delete(c) : chosen.add(c);
-        b.setAttribute("aria-pressed", String(chosen.has(c)));
-        store.set("drill:classes", [...chosen]);
-        count.textContent = countText();
-      });
-      pick.append(b);
-    }
-    const countText = () => {
+    const ct = el("div", "ctiles");
+    const countLine = el("span", "small");
+    const upCount = () => {
       const n = pool.filter((q) => !chosen.size || q.classes.some((c) => chosen.has(c))).length;
-      return (chosen.size ? "Classes picked: " + n : "All classes: " + n) + " questions in the pool";
+      countLine.textContent = (chosen.size ? chosen.size + (chosen.size === 1 ? " class" : " classes") + " picked · " : "All classes · ") + n + " questions";
     };
-    const count = el("p", "small", countText());
-    d.append(pick, count, button("Start 10 questions", "primary", () => startDrill([...chosen])));
-    box.append(d);
+    for (let c = 1; c <= 9; c++) {
+      const qs = pool.filter((q) => q.classes.includes(c));
+      const seen = qs.filter((q) => stats[q.id]), right = seen.filter((q) => stats[q.id].right).length;
+      const b = el("button", "ctile"); b.type = "button"; b.style.setProperty("--cc", "var(--c" + c + ")");
+      b.setAttribute("aria-pressed", String(chosen.has(c)));
+      const t = el("span", "t", CLASS_NAMES[c]); t.append(el("small", null, qs.length + " questions" + (seen.length ? " · " + right + "/" + seen.length + " right" : "")));
+      b.append(el("span", "n", String(c)), t, el("span", "ck"));
+      b.addEventListener("click", () => { chosen.has(c) ? chosen.delete(c) : chosen.add(c); b.setAttribute("aria-pressed", String(chosen.has(c))); store.set("drill:classes", [...chosen]); upCount(); });
+      ct.append(b);
+    }
+    upCount();
+    const df = el("div", "drillfoot");
+    df.append(countLine, button("Start 10 questions", "primary", () => startDrill([...chosen]), "play"));
+    db.append(ct, df);
+    ds.append(db);
+    box.append(ds);
 
-    box.append(el("p", "foot", "Your answers and scores stay on this device. An open answer reaches the group only if you press Share. Built " + (P.content.built ? new Date(P.content.built).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "") + " from the class decks, our recordings and Gillingham."));
+    box.append(el("p", "foot", "Your answers and scores stay on this device. An open answer reaches the group only when you press Share. Built " + (P.content.built ? new Date(P.content.built).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "") + " from the class decks, our recordings and Gillingham; the mocks are practice material written by Claude, not by the lecturer."));
   }
 
-  /* ---------- exam ---------- */
+  /* ---------- exam shell ---------- */
   function renderExam(box) {
     const ex = examById(P.view.id);
-    if (!ex) { go({ name: "home" }); return; }
-    const p = prog(ex.id);
+    if (!ex) { go("practise"); return; }
+    const p = prog(ex.id), s = score(ex, p);
+    box.style.setProperty("--x", xColor(ex));
 
     const head = el("div", "xhead");
-    head.append(textBtn("← All exams", () => go({ name: "home" }), "back"));
-    const t = el("div", "xtitle");
-    t.append(el("span", "ctag" + (ex.kind === "demo" ? " his" : ""), ex.kind === "demo" ? "His trial exam" : ex.title), el("h2", null, ex.company));
-    head.append(t);
-
-    const bar = el("div", "xbar");
-    const tabs = el("div", "xtabs"); tabs.setAttribute("role", "tablist");
-    [["case", "Case"], ["a", "Section A"], ["b", "Section B"], ["score", "Score"]].forEach(([k, label]) => {
-      const b = el("button", "xtab", label); b.type = "button"; b.setAttribute("role", "tab");
-      b.setAttribute("aria-selected", String(P.view.tab === k));
-      b.addEventListener("click", () => { P.view.tab = k; render(); window.scrollTo({ top: 0 }); });
-      tabs.append(b);
+    const cr = el("nav", "crumbs"); const a = el("a"); a.href = "#/practise"; a.append(icon("back"), document.createTextNode("All exams")); cr.append(a, el("span", null, "/"), el("span", null, exLabel(ex)));
+    head.append(cr);
+    const tt = el("div", "xtitle");
+    const lft = el("div", "lft"); lft.append(el("span", "tag", exLabel(ex)), el("h1", null, ex.company));
+    const rgt = el("div", "rgt");
+    const mode = el("div", "seg"); mode.setAttribute("aria-label", "Mode");
+    [["practise", "Practise", "Check each answer as you go"], ["exam", "Exam", "Answers and marking guides stay hidden until you finish; 3-hour timer"]].forEach(([m, l, t]) => {
+      const b = el("button", null, l); b.type = "button"; b.title = t; b.setAttribute("aria-pressed", String(p.mode === m));
+      b.addEventListener("click", () => { const q = prog(ex.id); q.mode = m; if (m === "exam" && !q.timerStart) q.timerStart = Date.now(); saveProg(ex.id, q); render(); });
+      mode.append(b);
     });
-    bar.append(tabs);
-    const mode = el("div", "mode");
-    const mp = el("button", "seg", "Practise"); mp.type = "button"; mp.setAttribute("aria-pressed", String(p.mode === "practise"));
-    const me = el("button", "seg", "Exam"); me.type = "button"; me.setAttribute("aria-pressed", String(p.mode === "exam"));
-    mp.title = "Check each answer as you go"; me.title = "Answers and marking guides stay hidden until you finish; 3-hour timer";
-    mp.addEventListener("click", () => { const q = prog(ex.id); q.mode = "practise"; saveProg(ex.id, q); render(); });
-    me.addEventListener("click", () => { const q = prog(ex.id); q.mode = "exam"; if (!q.timerStart) q.timerStart = Date.now(); saveProg(ex.id, q); render(); });
-    mode.append(mp, me);
-    bar.append(mode);
-    const timer = el("span", "timer"); timer.id = "xtimer";
-    bar.append(timer);
-    head.append(bar);
+    const timer = el("span", "timer"); timer.id = "xtimer"; timer.hidden = true;
+    rgt.append(timer, mode);
+    tt.append(lft, rgt);
+    head.append(tt);
     box.append(head);
+
+    const bar = el("div", "secbar");
+    const nav = el("nav", "seg"); nav.setAttribute("aria-label", "Sections");
+    const secs = [["case", "Case", ""], ["a", "Section A", (p.mode === "exam" && !p.finishedA ? s.answered : s.aDone) + "/12"], ["b", "Section B", s.partsDone + "/" + s.parts], ["score", "Score", ""]];
+    secs.forEach(([k, l, c]) => {
+      const b = el("button", null, l); b.type = "button";
+      if (c) b.append(el("span", "cnt", c));
+      if (P.view.sec === k) b.setAttribute("aria-current", "page");
+      b.addEventListener("click", () => go("practise/" + ex.id + "/" + k + (k === "a" ? "/" + (p.atA || 1) : k === "b" ? "/" + (p.atB || 1) : "")));
+      nav.append(b);
+    });
+    bar.append(nav);
+    box.append(bar);
     tickTimer(ex.id);
 
     const wide = window.matchMedia("(min-width: 1180px)").matches;
-    const body = el("div", "xbody" + (wide && (P.view.tab === "a" || P.view.tab === "b") ? " split" : ""));
-    if (body.classList.contains("split")) {
-      const side = el("aside", "caseside"); side.setAttribute("aria-label", "The case");
-      side.append(caseView(ex, true));
-      body.append(side);
-    }
+    const inQ = P.view.sec === "a" || P.view.sec === "b";
+    const body = el("div", "xbody" + (wide && inQ ? " split" : ""));
+    if (wide && inQ) { const side = panel("caseside"); side.setAttribute("aria-label", "The case"); side.append(caseView(ex, true)); body.append(side); }
     const main = el("div", "xmain");
-    if (P.view.tab === "case") main.append(caseView(ex, false));
-    else if (P.view.tab === "a") renderSectionA(main, ex);
-    else if (P.view.tab === "b") renderSectionB(main, ex);
+    if (P.view.sec === "case") main.append(caseView(ex, false));
+    else if (P.view.sec === "a") renderSectionA(main, ex);
+    else if (P.view.sec === "b") renderSectionB(main, ex);
     else renderScore(main, ex);
     body.append(main);
     box.append(body);
+
+    if (!wide && inQ) {
+      const fab = el("button", "fab"); fab.type = "button"; fab.append(icon("doc"), document.createTextNode("Case"));
+      fab.addEventListener("click", () => openDrawer(ex));
+      box.append(fab);
+    }
   }
+
+  function openDrawer(ex) {
+    const d = el("div", "drawer"); d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "The case");
+    const dh = el("div", "dh"); dh.append(el("b", null, ex.company + " · the case"));
+    const close = button("Close", "small", () => { d.remove(); P.drawer = false; document.body.style.overflow = ""; }, "x");
+    dh.append(close);
+    const db = el("div", "db"); db.append(caseView(ex, true));
+    d.append(dh, db);
+    document.body.append(d); document.body.style.overflow = "hidden"; P.drawer = d;
+    close.focus();
+  }
+  function closeDrawer() { if (P.drawer) { P.drawer.remove(); P.drawer = false; document.body.style.overflow = ""; } }
 
   function tickTimer(id) {
     const t = $("#xtimer"); if (!t) return;
     const upd = () => {
       const p = prog(id);
-      if (p.mode !== "exam" || !p.timerStart || p.finishedB) { t.textContent = ""; t.hidden = true; return; }
+      if (p.mode !== "exam" || !p.timerStart || p.finishedB) { t.hidden = true; return; }
       t.hidden = false;
-      const left = p.timerStart + 3 * 3600000 - Date.now();
-      const s = Math.max(0, Math.floor(left / 1000));
-      t.textContent = (left <= 0 ? "Time is up · " : "") + Math.floor(s / 3600) + ":" + String(Math.floor(s % 3600 / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+      const left = p.timerStart + 3 * 3600000 - Date.now(), s = Math.max(0, Math.floor(left / 1000));
+      t.textContent = ""; t.append(icon("clock"), document.createTextNode((left <= 0 ? "Time's up " : "") + Math.floor(s / 3600) + ":" + String(Math.floor(s % 3600 / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0")));
       t.classList.toggle("late", left < 15 * 60000);
     };
-    upd();
-    P.timerTick = setInterval(upd, 1000);
+    upd(); P.timerTick = setInterval(upd, 1000);
   }
 
   function caseView(ex, compact) {
-    const art = el("article", "case" + (compact ? " compact" : ""));
-    art.append(el("h3", "casetitle", ex.case.title));
+    const art = el("article", "case" + (compact ? "" : " full panel"));
+    if (!compact) art.append(el("p", "kicker", "The case · read it first"));
+    art.append(el("h2", null, ex.case.title));
     if (ex.case.note) art.append(el("p", "casenote", ex.case.note));
     if (!compact && ex.instructions) {
       const ins = el("div", "instr");
-      ins.append(el("p", "fk", "Instructions"));
+      ins.append(el("p", "kicker", "Instructions"));
       const ul = el("ul"); ex.instructions.forEach((x) => ul.append(el("li", null, x)));
-      ins.append(ul);
-      art.append(ins);
+      ins.append(ul); art.append(ins);
     }
     ex.case.blocks.forEach((b) => {
       if (b.h) art.append(el("h4", null, b.h));
-      else if (b.p) art.append(el("p", null, b.p));
+      else if (b.p) art.append(el("p", "cp", b.p));
       else if (b.table) {
-        if (b.table.caption) art.append(el("p", "tcap", b.table.caption));
-        const wrap = el("div", "twrap");
-        const tb = el("table");
-        const thead = el("thead"); const tr = el("tr");
-        b.table.head.forEach((h) => tr.append(el("th", null, h)));
-        thead.append(tr); tb.append(thead);
-        const tbody = el("tbody");
-        b.table.rows.forEach((r) => { const rr = el("tr"); r.forEach((c, i) => rr.append(el(i === 0 ? "th" : "td", null, c))); tbody.append(rr); });
-        tb.append(tbody); wrap.append(tb); art.append(wrap);
+        const exh = el("div", "exhibit");
+        if (b.table.caption) exh.append(el("div", "cap", b.table.caption));
+        const wrap = el("div", "twrap"); const tb = el("table");
+        const thead = el("thead"); const tr = el("tr"); b.table.head.forEach((h) => tr.append(el("th", null, h))); thead.append(tr);
+        const tbody = el("tbody"); b.table.rows.forEach((r) => { const rr = el("tr"); r.forEach((c, i) => rr.append(el(i === 0 ? "th" : "td", null, c))); tbody.append(rr); });
+        tb.append(thead, tbody); wrap.append(tb); exh.append(wrap); art.append(exh);
       }
     });
     if (!compact) {
-      const nx = el("div", "next");
-      nx.append(button("Start Section A →", "primary", () => { P.view.tab = "a"; render(); window.scrollTo({ top: 0 }); }));
+      const nx = el("div", "btns"); nx.style.marginTop = "10px";
+      nx.append(button("Start Section A", "primary", () => go("practise/" + ex.id + "/a/" + (prog(ex.id).atA || 1)), "arrow", true));
       art.append(nx);
+      if (ex.origin) art.append(el("p", "origin", ex.origin));
     }
-    if (ex.origin && !compact) art.append(el("p", "small origin", ex.origin));
     return art;
+  }
+
+  /* ---------- section A: one question at a time ---------- */
+  function qState(p, q) {
+    if (shownA(p, q)) return p.mcq[q.id] === q.answer ? "ok" : "no";
+    return p.mcq[q.id] ? "ans" : "";
+  }
+  function qmap(items, cur, stateOf, onPick, label) {
+    const m = el("div", "qmap");
+    if (label) m.append(el("span", "lab", label));
+    items.forEach((it, i) => {
+      const b = el("button", "qd " + stateOf(it), it.label || String(i + 1)); b.type = "button";
+      b.setAttribute("aria-current", String(i === cur)); b.setAttribute("aria-label", "Question " + (it.label || i + 1));
+      b.addEventListener("click", () => onPick(i)); m.append(b);
+    });
+    return m;
   }
 
   function renderSectionA(main, ex) {
     const p = prog(ex.id);
+    const n = Math.min(12, P.view.n || p.atA || 1), i = n - 1, q = ex.mcq[i];
+    if (p.atA !== n) { p.atA = n; saveProg(ex.id, p); }
     const examMode = p.mode === "exam";
-    const reveal = !!p.finishedA;
-    main.append(el("h3", "secthead", "Section A · multiple choice"), el("p", "small", "12 questions × 4 points. One best answer each." + (examMode ? (reveal ? " Finished: answers are shown." : " Exam mode: the answers appear when you finish the section.") : " Practise mode: check each answer as you go.")));
-    const list = el("ol", "mcqs");
-    ex.mcq.forEach((q) => {
-      const li = el("li", "mcq"); li.id = "q" + q.id;
-      const shown = reveal || (!examMode && p.checked[q.id]);
-      const head = el("div", "qhead"); head.append(el("span", "qn", "Question " + q.id), el("span", "qp", "4 points"));
-      li.append(head, el("p", "stem", q.stem));
-      const opts = el("div", "opts"); opts.setAttribute("role", "radiogroup");
-      q.options.forEach((o, i) => {
-        const L = LETTERS[i];
-        const lab = el("label", "opt");
-        const r = el("input"); r.type = "radio"; r.name = ex.id + "-" + q.id; r.value = L; r.checked = p.mcq[q.id] === L; r.disabled = !!shown;
-        r.addEventListener("change", () => { const pp = prog(ex.id); pp.mcq[q.id] = L; saveProg(ex.id, pp); });
-        lab.append(r, el("span", "ol", L), el("span", "ot", o));
-        if (shown) {
-          if (L === q.answer) lab.classList.add("right");
-          else if (p.mcq[q.id] === L) lab.classList.add("wrong");
-        }
-        opts.append(lab);
-      });
-      li.append(opts);
-      if (shown) li.append(feedback(q, p.mcq[q.id]));
-      else if (!examMode) {
-        const act = el("div", "qact");
-        act.append(button("Check", "ghost small", () => {
-          const pp = prog(ex.id);
-          if (!pp.mcq[q.id]) { hint.textContent = "Pick an answer first."; return; }
-          pp.checked[q.id] = true; saveProg(ex.id, pp); render(); document.getElementById("q" + q.id)?.scrollIntoView({ block: "center" });
-        }));
-        const hint = el("span", "small"); act.append(hint);
-        li.append(act);
-      }
-      list.append(li);
-    });
-    main.append(list);
+    const shown = shownA(p, q);
 
-    const foot = el("div", "secfoot");
-    if (examMode && !reveal) {
-      const n = Object.keys(p.mcq).length;
-      foot.append(el("p", "small", n + " of 12 answered."), button("Finish Section A and see the answers", "primary", () => {
-        const pp = prog(ex.id); pp.finishedA = true; saveProg(ex.id, pp); render(); window.scrollTo({ top: 0 });
-      }));
-    } else {
-      const s = score(ex, p);
-      foot.append(el("p", "tally", "Section A: " + s.a + " of " + s.aMax + " points" + (s.aDone < 12 ? " so far (" + s.aDone + " of 12 checked)" : "")));
-    }
-    foot.append(button("Go to Section B →", "primary", () => { P.view.tab = "b"; render(); window.scrollTo({ top: 0 }); }));
-    foot.append(textBtn("Clear my answers for Section A", () => {
-      const pp = prog(ex.id); pp.mcq = {}; pp.checked = {}; pp.finishedA = false; saveProg(ex.id, pp); render();
+    const top = panel("secfoot");
+    top.append(qmap(ex.mcq, i, (x) => qState(p, x), (k) => go("practise/" + ex.id + "/a/" + (k + 1)), "Section A"));
+    const s = score(ex, p);
+    if (examMode && !p.finishedA) top.append(button("Finish Section A", "primary small", () => finishA(ex), "check"));
+    else top.append(el("span", "tally", s.a + " / 48" + (s.aDone < 12 ? " · " + s.aDone + " of 12 checked" : "")));
+    main.append(top);
+
+    main.append(questionCard({
+      q, num: "Question " + n + " of 12", points: "4 points", name: ex.id + "-" + q.id,
+      picked: p.mcq[q.id], shown,
+      onPick: (L) => { const pp = prog(ex.id); pp.mcq[q.id] = L; saveProg(ex.id, pp); render(); },
+      onCheck: examMode ? null : () => { const pp = prog(ex.id); pp.checked[q.id] = true; saveProg(ex.id, pp); render(); },
+      prev: n > 1 ? () => go("practise/" + ex.id + "/a/" + (n - 1)) : null,
+      next: n < 12 ? () => go("practise/" + ex.id + "/a/" + (n + 1)) : () => go("practise/" + ex.id + "/b/" + (p.atB || 1)),
+      nextLabel: n < 12 ? "Next" : "Section B",
+      note: examMode && !p.finishedA ? "Exam mode: the answers appear when you finish Section A." : "",
     }));
-    main.append(foot);
+  }
+
+  function finishA(ex) { const pp = prog(ex.id); pp.finishedA = true; saveProg(ex.id, pp); render(); }
+
+  /* A multiple-choice card, shared by the exams and the drill. */
+  let keyTarget = null;
+  function questionCard(o) {
+    const card = panel("qcard");
+    const top = el("div", "qtop"); top.append(el("span", "qn", o.num));
+    const r = el("span"); if (o.points === "") r.append(chips(o.q.classes)); else r.append(el("span", "qp", o.points));
+    top.append(r);
+    card.append(top, el("p", "stem", o.q.stem));
+    const opts = el("div", "opts"); opts.setAttribute("role", "radiogroup");
+    o.q.options.forEach((t, i) => {
+      const L = LETTERS[i];
+      const lab = el("label", "opt" + (o.shown ? " locked" : ""));
+      const inp = el("input"); inp.type = "radio"; inp.name = o.name; inp.value = L; inp.checked = o.picked === L; inp.disabled = !!o.shown;
+      inp.addEventListener("change", () => o.onPick(L));
+      lab.append(inp, el("span", "ol", L), el("span", "ot", t));
+      if (o.shown) { if (L === o.q.answer) lab.classList.add("right"); else if (o.picked === L) lab.classList.add("wrong"); }
+      opts.append(lab);
+    });
+    card.append(opts);
+    if (o.shown) card.append(feedback(o.q, o.picked));
+    const foot = el("div", "qfoot");
+    const prev = button("Previous", "ghost small", o.prev, "back"); prev.disabled = !o.prev;
+    const mid = el("div", "mid");
+    const hint = el("span", "hint", o.note || "");
+    let check = null;
+    if (o.onCheck && !o.shown) {
+      check = button("Check", "primary", () => { if (!o.picked) { hint.textContent = "Pick an answer first."; hint.classList.add("warn"); return; } o.onCheck(); }, "check");
+      mid.append(check);
+    }
+    mid.append(hint);
+    const next = button(o.nextLabel || "Next", o.shown || !o.onCheck ? "primary small" : "ghost small", o.next, "next", true); next.disabled = !o.next;
+    foot.append(prev, mid, next);
+    card.append(foot);
+    const keys = el("div", "keys"); keys.append(el("kbd", null, "A"), document.createTextNode("–"), el("kbd", null, "E"), document.createTextNode(" choose ·"), el("kbd", null, "Enter"), document.createTextNode(o.onCheck ? " check ·" : " next ·"), el("kbd", null, "←"), el("kbd", null, "→"), document.createTextNode(" move"));
+    card.append(keys);
+    keyTarget = { pick: (L) => { if (!o.shown) o.onPick(L); }, enter: () => { if (check) check.click(); else if (o.next) o.next(); }, prev: o.prev, next: o.next };
+    return card;
   }
 
   function feedback(q, picked) {
-    const f = el("div", "fb " + (picked === q.answer ? "ok" : "no"));
-    f.append(el("p", "fbhead", picked === q.answer ? "Right: " + q.answer : (picked ? "Not quite. You picked " + picked + "; the answer is " + q.answer : "Not answered. The answer is " + q.answer)));
+    const ok = picked === q.answer;
+    const f = el("div", "fb " + (ok ? "ok" : "no"));
+    const h = el("p", "fbhead"); h.append(icon(ok ? "check" : "x"), document.createTextNode(ok ? "Right: " + q.answer : picked ? "Not quite. You picked " + picked + "; the answer is " + q.answer + "." : "Not answered. The answer is " + q.answer + "."));
+    f.append(h);
     if (q.concept) f.append(el("p", "concept", q.concept));
     f.append(el("p", null, q.why));
     const s = sourcesLine(q.sources); if (s) f.append(s);
     return f;
   }
 
+  /* ---------- section B: one part at a time ---------- */
   function renderSectionB(main, ex) {
     const p = prog(ex.id);
-    const examMode = p.mode === "exam";
-    const locked = examMode && !p.finishedB;
-    main.append(el("h3", "secthead", "Section B · open questions"),
-      el("p", "small", "Write your answer, then open the marking guide and tick what you covered: that's your score. " + (locked ? "Exam mode: the guides open when you finish the section." : "Share an answer to compare it with the group's.")));
-    ex.open.forEach((o) => {
-      const sec = el("section", "openq");
-      const hd = el("div", "qhead"); hd.append(el("span", "qn", "Question " + o.id + " · " + o.title), el("span", "qp", o.points + " points"));
-      sec.append(hd);
-      if (o.intro) sec.append(el("p", "stem", o.intro));
-      o.parts.forEach((pt) => sec.append(partView(ex, o, pt, locked)));
-      main.append(sec);
-    });
-    const foot = el("div", "secfoot");
-    if (locked) foot.append(button("Finish Section B and open the marking guides", "primary", () => {
-      const pp = prog(ex.id); pp.finishedB = true; saveProg(ex.id, pp); render(); window.scrollTo({ top: 0 });
-    }));
-    foot.append(button("See my score →", "primary", () => { P.view.tab = "score"; render(); window.scrollTo({ top: 0 }); }));
-    main.append(foot);
+    const parts = partsOf(ex);
+    const n = Math.min(parts.length, P.view.n || p.atB || 1), i = n - 1, cur = parts[i];
+    if (p.atB !== n) { p.atB = n; saveProg(ex.id, p); }
+    const examMode = p.mode === "exam", locked = examMode && !p.finishedB;
+
+    const top = panel("secfoot");
+    const st = (x) => { const v = p.open[x.k] || {}; return v.marked ? "ok" : (v.text || "").trim() ? "ans" : ""; };
+    top.append(qmap(parts.map((x) => ({ ...x, label: x.k })), i, st, (k) => go("practise/" + ex.id + "/b/" + (k + 1)), "Section B"));
+    if (locked) top.append(button("Finish Section B", "primary small", () => { const pp = prog(ex.id); pp.finishedB = true; saveProg(ex.id, pp); render(); }, "check"));
+    else { const s = score(ex, p); top.append(el("span", "tally", s.b + " / " + (s.bDone || 52) + (s.partsDone < s.parts ? " · " + s.partsDone + " of " + s.parts + " marked" : ""))); }
+    main.append(top);
+    main.append(partView(ex, cur, n, parts.length, locked));
     loadAnswers(ex.id);
   }
 
-  function partView(ex, o, pt, locked) {
-    const k = o.id + pt.id, qkey = ex.id + ":" + k;
-    const box = el("div", "part"); box.dataset.qkey = qkey;
-    box.append(el("p", "prompt", pt.id + ") " + pt.prompt));
-    const p = prog(ex.id); const st = p.open[k] || {};
-    const ta = el("textarea", "ans"); ta.rows = 6; ta.value = st.text || "";
+  function partView(ex, cur, n, total, locked) {
+    const { o, pt, k } = cur, qkey = ex.id + ":" + k;
+    const card = panel("pcard"); card.dataset.qkey = qkey;
+    const top = el("div", "qtop"); top.append(el("span", "qn", "Question " + o.id + " · " + o.title), el("span", "qp", "Part " + pt.id + " · " + pt.points + " of " + o.points + " points"));
+    card.append(top);
+    if (o.intro) { const qi = el("p", "qintro"); qi.append(el("b", null, "Situation: "), document.createTextNode(o.intro)); card.append(qi); }
+    card.append(el("p", "prompt", pt.prompt));
+    const st = prog(ex.id).open[k] || {};
+    const ta = el("textarea", "ans"); ta.value = st.text || "";
     ta.placeholder = "Your answer. Name the framework, apply it to the case's facts, then make a choice.";
-    ta.setAttribute("aria-label", "Your answer to " + o.id + pt.id);
-    const meta = el("div", "ameta");
-    const wc = el("span", "small", plural(words(ta.value), "word"));
+    ta.setAttribute("aria-label", "Your answer to " + k);
+    const meta = el("div", "ameta"); const wc = el("span", null, plural(words(ta.value), "word")); meta.append(wc, el("span", null, "Saved on this device"));
     let t = null;
+    const paintMap = () => {
+      const v = prog(ex.id).open[k] || {}, qd = document.querySelector("#practise .qmap .qd[aria-current='true']");
+      if (qd) qd.className = "qd " + (v.marked ? "ok" : (v.text || "").trim() ? "ans" : "");
+    };
     ta.addEventListener("input", () => {
-      wc.textContent = plural(words(ta.value), "word");
-      clearTimeout(t); t = setTimeout(() => { const pp = prog(ex.id); pp.open[k] = { ...(pp.open[k] || {}), text: ta.value }; saveProg(ex.id, pp); shareState(); }, 400);
-      autoGrow(ta);
+      wc.textContent = plural(words(ta.value), "word"); autoGrow(ta);
+      clearTimeout(t); t = setTimeout(() => { const pp = prog(ex.id); pp.open[k] = { ...(pp.open[k] || {}), text: ta.value }; saveProg(ex.id, pp); shareState(); paintMap(); }, 400);
     });
     requestAnimationFrame(() => autoGrow(ta));
-    meta.append(wc);
-    box.append(ta, meta);
+    card.append(ta, meta);
 
     const tools = el("div", "ptools");
-    const guideBtn = button(st.shown && !locked ? "Hide marking guide" : "Show marking guide", "ghost small");
-    guideBtn.disabled = locked;
-    if (locked) guideBtn.title = "Opens when you finish Section B (exam mode)";
-    const shareBtn = button("Share with the group", "ghost small");
-    const groupBtn = button("Group answers", "ghost small");
-    tools.append(guideBtn, shareBtn, groupBtn);
-    const shareMsg = el("span", "small sharemsg");
-    tools.append(shareMsg);
-    box.append(tools);
+    const guideBtn = button(st.shown && !locked ? "Hide marking guide" : "Show marking guide", "small", null, "check");
+    guideBtn.disabled = locked; if (locked) guideBtn.title = "Opens when you finish Section B (exam mode)";
+    const shareBtn = button("Share with the group", "small ghost");
+    const groupBtn = button("Group answers", "small ghost");
+    const shareMsg = el("span", "sharemsg");
+    tools.append(guideBtn, shareBtn, groupBtn, shareMsg);
+    card.append(tools);
 
     const guide = el("div", "guide"); guide.hidden = !st.shown || locked;
-    const total = el("p", "gtotal");
+    const gtotal = el("span", "gtotal");
+    const upTotal = () => { const c = prog(ex.id).open[k] || {}; gtotal.textContent = (c.ticks || []).reduce((s, i) => s + (pt.guide[i]?.pts || 0), 0) + " / " + pt.points; };
     const fill = () => {
       guide.textContent = "";
-      guide.append(el("p", "fk", "Marking guide · tick what your answer covered"));
-      const cur = prog(ex.id).open[k] || {};
-      const ticks = new Set(cur.ticks || []);
-      pt.guide.forEach((g, i) => {
-        const lab = el("label", "gi");
-        const c = el("input"); c.type = "checkbox"; c.checked = ticks.has(i);
+      const gh = el("div", "ghead"); gh.append(el("p", "kicker", "Marking guide · tick what you covered"), gtotal); guide.append(gh);
+      const ticks = new Set((prog(ex.id).open[k] || {}).ticks || []);
+      pt.guide.forEach((g, gi) => {
+        const lab = el("label", "gi"); const c = el("input"); c.type = "checkbox"; c.checked = ticks.has(gi);
         c.addEventListener("change", () => {
           const pp = prog(ex.id); const s = pp.open[k] || {}; const tk = new Set(s.ticks || []);
-          c.checked ? tk.add(i) : tk.delete(i);
-          pp.open[k] = { ...s, ticks: [...tk], marked: true }; saveProg(ex.id, pp); upTotal();
+          c.checked ? tk.add(gi) : tk.delete(gi); pp.open[k] = { ...s, ticks: [...tk], marked: true }; saveProg(ex.id, pp); upTotal(); paintMap();
         });
-        lab.append(c, el("span", "gp", g.pts + (g.pts === 1 ? " pt" : " pts")), el("span", "gt", g.text));
-        guide.append(lab);
+        lab.append(c, el("span", "gp", g.pts + (g.pts === 1 ? " pt" : " pts")), el("span", null, g.text)); guide.append(lab);
       });
-      guide.append(total);
       const s = sourcesLine(pt.sources); if (s) guide.append(s);
       upTotal();
     };
-    const upTotal = () => {
-      const cur = prog(ex.id).open[k] || {};
-      const got = (cur.ticks || []).reduce((s, i) => s + (pt.guide[i]?.pts || 0), 0);
-      total.textContent = "You: " + got + " of " + pt.points + " points";
-    };
     if (!guide.hidden) fill();
     guideBtn.addEventListener("click", () => {
-      const pp = prog(ex.id); const s = pp.open[k] || {};
-      const open = guide.hidden;
+      const pp = prog(ex.id); const s = pp.open[k] || {}; const open = guide.hidden;
       pp.open[k] = { ...s, marked: open ? true : s.marked, shown: open }; saveProg(ex.id, pp);
-      guide.hidden = !open; guideBtn.textContent = open ? "Hide marking guide" : "Show marking guide";
+      guide.hidden = !open; guideBtn.lastChild.textContent = open ? "Hide marking guide" : "Show marking guide";
       if (open) fill();
+      paintMap();
     });
-    box.append(guide);
+    card.append(guide);
 
     const group = el("div", "group"); group.hidden = true;
-    box.append(group);
     const joinBox = el("div", "joinbox"); joinBox.hidden = true;
-    box.append(joinBox);
-
-    function mine() { return (P.answers.get(ex.id) || []).find((a) => a.qkey === qkey && S.me && a.page === S.me.id); }
-    function others() { return (P.answers.get(ex.id) || []).filter((a) => a.qkey === qkey); }
+    card.append(group, joinBox);
+    const mine = () => (P.answers.get(ex.id) || []).find((a) => a.qkey === qkey && S.me && a.page === S.me.id);
+    const others = () => (P.answers.get(ex.id) || []).filter((a) => a.qkey === qkey);
     function shareState() {
-      const m = mine(), n = others().length;
-      groupBtn.textContent = "Group answers" + (n ? " · " + n : "");
-      groupBtn.disabled = !n;
-      const text = ta.value.trim();
+      const m = mine(), cnt = others().length;
+      groupBtn.lastChild.textContent = "Group answers" + (cnt ? " · " + cnt : "");
+      groupBtn.disabled = !cnt;
       if (m) {
-        shareBtn.textContent = m.body === ta.value ? "Shared ✓ · stop sharing" : "Update my shared answer";
+        shareBtn.lastChild.textContent = m.body === ta.value ? "Shared · stop sharing" : "Update my shared answer";
         shareMsg.textContent = m.body === ta.value ? "The group sees this answer as " + S.me.name + "." : "You changed it since you shared.";
-      } else {
-        shareBtn.textContent = "Share with the group";
-        shareMsg.textContent = "";
-      }
-      shareBtn.disabled = !m && !text;
+      } else { shareBtn.lastChild.textContent = "Share with the group"; shareMsg.textContent = ""; }
+      shareBtn.disabled = !m && !ta.value.trim();
       if (!group.hidden) fillGroup();
     }
     function fillGroup() {
@@ -459,27 +571,19 @@ const Practise = (() => {
       const list = others();
       if (!list.length) { group.append(el("p", "small", "Nobody has shared an answer to this part yet.")); return; }
       list.forEach((a) => {
-        const it = el("div", "ga");
-        const h = el("p", "gah"); h.append(el("b", null, a.name + (S.me && a.page === S.me.id ? " (you)" : "")), el("span", "small", ago(a.updated)));
-        it.append(h, el("div", "gab", a.body));
-        group.append(it);
+        const it = el("div", "ga"); const h = el("div", "gah");
+        h.append(el("span", "avatar", (a.name || "?").trim().slice(0, 1).toUpperCase()), el("b", null, a.name + (S.me && a.page === S.me.id ? " (you)" : "")), el("span", "small", ago(a.updated)));
+        it.append(h, el("div", "gab", a.body)); group.append(it);
       });
     }
     groupBtn.addEventListener("click", () => { group.hidden = !group.hidden; if (!group.hidden) fillGroup(); });
     shareBtn.addEventListener("click", async () => {
       if (!S.me) {
         joinBox.hidden = false; joinBox.textContent = "";
-        const j = joinForm({
-          lead: "Shared answers carry your name. Open your page once with your name and a PIN (the same as in the Notes tab); this device remembers you.",
-          button: "Continue",
-          cancel: () => { joinBox.hidden = true; },
-          done: () => { joinBox.hidden = true; shareBtn.click(); },
-        });
-        joinBox.append(j.form); j.focus();
-        return;
+        const j = joinForm({ lead: "Shared answers carry your name. Open your page once with your name and a PIN (the same as in Notes); this device remembers you.", button: "Continue", cancel: () => { joinBox.hidden = true; }, done: () => { joinBox.hidden = true; shareBtn.click(); } });
+        joinBox.append(j.form); j.focus(); return;
       }
-      const m = mine();
-      const stop = m && m.body === ta.value;
+      const m = mine(), stop = m && m.body === ta.value;
       shareBtn.disabled = true; shareMsg.textContent = stop ? "Removing…" : "Sharing…";
       try {
         const r = await rpc("share_answer", { g: S.g, p_token: S.me.token, p_qkey: qkey, p_body: stop ? "" : ta.value });
@@ -488,153 +592,313 @@ const Practise = (() => {
         await loadAnswers(ex.id, true);
       } catch (e) { shareMsg.textContent = "No connection. Your answer is still here; try again."; shareBtn.disabled = false; }
     });
-    box._refresh = shareState;
+    card._refresh = shareState;
     shareState();
-    return box;
+
+    const foot = el("div", "qfoot");
+    const prev = button("Previous part", "ghost small", n > 1 ? () => go("practise/" + ex.id + "/b/" + (n - 1)) : null, "back"); prev.disabled = n <= 1;
+    const next = n < total ? button("Next part", "primary small", () => go("practise/" + ex.id + "/b/" + (n + 1)), "next", true) : button("See my score", "primary small", () => go("practise/" + ex.id + "/score"), "next", true);
+    foot.append(prev, el("span", "hint", locked ? "Exam mode: the marking guides open when you finish Section B." : "Write first, then open the guide."), next);
+    card.append(foot);
+    keyTarget = null;
+    return card;
   }
 
-  function autoGrow(ta) { ta.style.height = "auto"; ta.style.height = Math.max(150, ta.scrollHeight + 4) + "px"; }
+  function autoGrow(ta) { ta.style.height = "auto"; ta.style.height = Math.max(170, ta.scrollHeight + 4) + "px"; }
 
   async function loadAnswers(examId, force) {
     const at = P.answersAt.get(examId) || 0;
     if (!force && Date.now() - at < 20000) { refreshParts(); return; }
     P.answersAt.set(examId, Date.now());
-    try {
-      const r = await rpc("list_answers", { g: S.g, p_exam: examId });
-      if (Array.isArray(r)) P.answers.set(examId, r);
-    } catch (e) { /* offline: keep what we have */ }
+    try { const r = await rpc("list_answers", { g: S.g, p_exam: examId }); if (Array.isArray(r)) P.answers.set(examId, r); } catch (e) { /* offline */ }
     refreshParts();
   }
-  function refreshParts() { document.querySelectorAll("#practise .part").forEach((b) => b._refresh && b._refresh()); }
+  function refreshParts() { document.querySelectorAll("#practise .pcard").forEach((b) => b._refresh && b._refresh()); }
 
-  function renderScore(main, ex) {
-    const p = prog(ex.id), s = score(ex, p);
-    main.append(el("h3", "secthead", "Your score"));
-    const grid = el("div", "scores");
-    const total = s.a + s.b, counted = (s.aDone * 4) + s.bDone;
-    const cell = (k, v, sub) => { const c = el("div", "sc"); c.append(el("span", "fk", k), el("b", null, v), el("span", "small", sub)); return c; };
-    grid.append(cell("Section A", s.a + " / 48", s.aDone + " of 12 questions checked"));
-    grid.append(cell("Section B (self-marked)", s.b + " / " + (s.bDone || 52), s.bDone ? "on " + s.bDone + " of 52 points marked" : "open a marking guide to score"));
-    const pct = counted ? Math.round(100 * total / counted) : 0;
-    grid.append(cell("So far", counted ? pct + "%" : "–", counted ? band(pct) + " on what you've marked" : "nothing marked yet"));
-    main.append(grid);
-    if (counted === 100) main.append(el("p", "tally", "Total: " + total + " of 100 · " + band(total)));
-
-    const missed = ex.mcq.filter((q) => (p.finishedA || p.checked[q.id]) && p.mcq[q.id] !== q.answer);
-    if (missed.length) {
-      main.append(el("h4", "sub", "Revisit"));
-      const ul = el("ul", "revisit");
-      missed.forEach((q) => {
-        const li = el("li");
-        li.append(el("b", null, "Q" + q.id + " · " + (q.concept || "")), chips(q.classes));
-        const s2 = sourcesLine(q.sources); if (s2) li.append(s2);
-        ul.append(li);
-      });
-      main.append(ul);
-    }
-    const foot = el("div", "secfoot");
-    foot.append(textBtn("Start this exam again (clears your answers on this device)", () => {
-      store.del(key(ex.id)); render();
-    }, "danger"));
-    main.append(foot);
+  /* ---------- score ---------- */
+  function ring(value, label, sub) {
+    const w = el("div", "ring");
+    const s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", "0 0 120 120");
+    const mk = (stroke, dash) => { const c = document.createElementNS(NS, "circle"); c.setAttribute("cx", "60"); c.setAttribute("cy", "60"); c.setAttribute("r", "52"); c.setAttribute("fill", "none"); c.setAttribute("stroke", stroke); c.setAttribute("stroke-width", "11"); c.setAttribute("stroke-linecap", "round"); if (dash != null) c.setAttribute("stroke-dasharray", dash + " 400"); return c; };
+    s.append(mk("var(--panel-3)"));
+    if (value > 0) s.append(mk("var(--x, var(--accent))", (2 * Math.PI * 52 * Math.min(100, value) / 100).toFixed(1)));
+    const l = el("div", "lbl"); const inner = el("div"); inner.append(el("b", null, label), el("small", null, sub)); l.append(inner);
+    w.append(s, l); return w;
+  }
+  function meter(label, val, max, sub, color) {
+    const d = el("div", "spart"); const r = el("div", "row"); r.append(el("span", null, label), el("b", null, val + " / " + max));
+    const b = el("div", "bar"); const f = el("i"); f.style.width = pct(val, max) + "%"; if (color) f.style.background = color; b.append(f);
+    d.append(r, b); if (sub) d.append(el("span", "small", sub)); return d;
   }
 
+  function renderScore(main, ex) {
+    confirmReset.armed = false;
+    const p = prog(ex.id), s = score(ex, p);
+    const got = s.a + s.b, max = s.aDone * 4 + s.bDone, perc = pct(got, max);
+    const hero = panel("scorehero");
+    hero.append(ring(perc, max ? perc + "%" : "–", max ? "on " + max + " of 100 points marked" : "nothing marked yet"));
+    const sp = el("div", "sparts");
+    const [bl, bc] = band(perc);
+    const head = el("div", "row"); head.style.display = "flex"; head.style.gap = "10px"; head.style.alignItems = "center"; head.style.flexWrap = "wrap";
+    head.append(el("b", null, "So far: " + got + " points"), el("span", "band " + bc, max ? bl : "Start a section"));
+    sp.append(head);
+    sp.append(meter("Section A · multiple choice", s.a, 48, s.aDone + " of 12 checked"));
+    sp.append(meter("Section B · open questions (self-marked)", s.b, s.bDone || 52, s.partsDone + " of " + s.parts + " parts marked"));
+    if (max === 100) sp.append(el("p", "small", "Complete: " + got + " of 100 · " + bl + ". His scale: 55 pass, 70 good, 85 excellent."));
+    hero.append(sp);
+    main.append(hero);
+
+    const shown = ex.mcq.filter((q) => p.finishedA || p.checked[q.id]);
+    if (shown.length) {
+      const bc2 = panel("byclass");
+      bc2.append(h2("Multiple choice by class", "where you lose points"));
+      const per = {};
+      shown.forEach((q) => q.classes.forEach((c) => { per[c] = per[c] || { r: 0, t: 0 }; per[c].t++; if (p.mcq[q.id] === q.answer) per[c].r++; }));
+      Object.keys(per).sort((a, b) => a - b).forEach((c) => {
+        const row = el("div", "bc"); const lab = el("span"); lab.append(chip(c), document.createTextNode(" " + CLASS_NAMES[c]));
+        const b = el("div", "bar"); const f = el("i"); f.style.width = pct(per[c].r, per[c].t) + "%"; f.style.background = "var(--c" + c + ")"; b.append(f);
+        row.append(lab, b, el("span", "mono", per[c].r + "/" + per[c].t)); bc2.append(row);
+      });
+      main.append(bc2);
+    }
+
+    const missed = ex.mcq.map((q, i) => ({ q, i })).filter(({ q }) => (p.finishedA || p.checked[q.id]) && p.mcq[q.id] !== q.answer);
+    if (missed.length) {
+      const rv = el("section", "sect"); rv.append(h2("Revisit", missed.length + (missed.length === 1 ? " question" : " questions")));
+      const list = panel("revisit");
+      missed.forEach(({ q, i }) => {
+        const b = el("button", "rv"); b.type = "button";
+        const t = el("span", "t", q.concept || q.stem.slice(0, 90)); t.append(el("small", null, (q.sources || []).join(" · ")));
+        b.append(el("span", "qd no", String(i + 1)), t, icon("next"));
+        b.addEventListener("click", () => go("practise/" + ex.id + "/a/" + (i + 1)));
+        list.append(b);
+      });
+      rv.append(list); main.append(rv);
+    }
+    const foot = panel("secfoot");
+    foot.append(el("span", "small", "Want a clean run? Your answers for this exam are only on this device."));
+    foot.append(button("Start this exam again", "ghost small", () => { if (confirmReset.armed) { store.del(key(ex.id)); confirmReset.armed = false; render(); } else { confirmReset.armed = true; resetBtn.lastChild.textContent = "Press again to clear"; } }, "reset"));
+    const resetBtn = foot.lastChild;
+    main.append(foot);
+  }
+  const confirmReset = { armed: false };
+
   /* ---------- drill ---------- */
-  function startDrill(classes) {
+  function startDrill(classes, items) {
     const pool = (P.content.drill || []).filter((q) => !classes.length || q.classes.some((c) => classes.includes(c)));
     const stats = store.get("drill:stats") || {};
-    const shuffled = pool.map((q) => ({ q, r: Math.random() + (stats[q.id]?.right ? 1 : 0) + (stats[q.id]?.seen ? 0.5 : 0) }))
-      .sort((a, b) => a.r - b.r).slice(0, 10).map((x) => x.q);
-    P.drill = { items: shuffled, i: 0, picks: {}, checked: {} };
-    go({ name: "drill" });
+    const picked = items || pool.map((q) => ({ q, r: Math.random() + (stats[q.id]?.right ? 1 : 0) + (stats[q.id]?.seen ? .5 : 0) })).sort((a, b) => a.r - b.r).slice(0, 10).map((x) => x.q);
+    P.drill = { items: picked, i: 0, picks: {}, checked: {}, from: items ? "topics" : "practise" };
+    go("drill");
   }
 
   function renderDrill(box) {
     const d = P.drill;
-    if (!d || !d.items.length) { go({ name: "home" }); return; }
+    if (!d || !d.items.length) { go("practise"); return; }
     const head = el("div", "xhead");
-    head.append(textBtn("← All exams", () => go({ name: "home" }), "back"));
-    const t = el("div", "xtitle"); t.append(el("span", "ctag", "Quick drill"), el("h2", null, d.i < d.items.length ? "Question " + (d.i + 1) + " of " + d.items.length : "Done"));
-    head.append(t); box.append(head);
-    const main = el("div", "xmain drill");
+    const cr = el("nav", "crumbs"); const a = el("a"); a.href = d.from === "topics" ? "#/topics" : "#/practise"; a.append(icon("back"), document.createTextNode(d.from === "topics" ? "Topics" : "All exams")); cr.append(a);
+    head.append(cr);
+    const tt = el("div", "xtitle"); const lft = el("div", "lft");
+    lft.append(el("span", "tag", "Quick drill"), el("h1", null, d.i < d.items.length ? (d.items.length === 1 ? "One question" : "Question " + (d.i + 1) + " of " + d.items.length) : "How you did"));
+    tt.append(lft); head.append(tt);
+    const bar = el("div", "bar"); const f = el("i"); f.style.width = pct(Math.min(d.i, d.items.length), d.items.length) + "%"; bar.append(f);
+    head.append(bar);
+    box.append(head);
+    const main = el("div", "xmain"); main.style.maxWidth = "860px";
     if (d.i >= d.items.length) {
       const right = d.items.filter((q) => d.picks[q.id] === q.answer).length;
-      main.append(el("p", "tally", right + " of " + d.items.length + " right"));
-      const ul = el("ul", "revisit");
-      d.items.filter((q) => d.picks[q.id] !== q.answer).forEach((q) => {
-        const li = el("li"); li.append(el("b", null, q.concept || q.stem.slice(0, 80)), chips(q.classes));
-        const s = sourcesLine(q.sources); if (s) li.append(s); ul.append(li);
-      });
-      if (ul.children.length) main.append(el("h4", "sub", "Revisit"), ul);
-      main.append(button("Another 10", "primary", () => startDrill(store.get("drill:classes") || [])));
+      const hero = panel("scorehero");
+      hero.append(ring(pct(right, d.items.length), right + "/" + d.items.length, "right"));
+      const sp = el("div", "sparts");
+      sp.append(el("b", null, right === d.items.length ? "All right. Try another set, or a full exam." : "Look up the ones you missed, then try again."));
+      const btns = el("div", "btns"); btns.append(button("Another 10", "primary", () => startDrill(store.get("drill:classes") || []), "play"), button("Back to exams", "ghost", () => go("practise")));
+      sp.append(btns); hero.append(sp); main.append(hero);
+      const missed = d.items.filter((q) => d.picks[q.id] !== q.answer);
+      if (missed.length) {
+        const list = panel("revisit");
+        missed.forEach((q) => { const row = el("div", "rv"); const t = el("span", "t", q.concept || ""); t.append(el("small", null, (q.sources || []).join(" · "))); row.append(chips(q.classes), t, el("span")); list.append(row); });
+        const sec = el("section", "sect"); sec.append(h2("Revisit"), list); main.append(sec);
+      }
       box.append(main); return;
     }
     const q = d.items[d.i];
-    const li = el("div", "mcq");
-    const hd = el("div", "qhead"); hd.append(chips(q.classes)); li.append(hd);
-    li.append(el("p", "stem", q.stem));
-    const shown = !!d.checked[q.id];
-    const opts = el("div", "opts");
-    q.options.forEach((o, i) => {
-      const L = LETTERS[i];
-      const lab = el("label", "opt");
-      const r = el("input"); r.type = "radio"; r.name = "drill"; r.value = L; r.checked = d.picks[q.id] === L; r.disabled = shown;
-      r.addEventListener("change", () => { d.picks[q.id] = L; });
-      lab.append(r, el("span", "ol", L), el("span", "ot", o));
-      if (shown) { if (L === q.answer) lab.classList.add("right"); else if (d.picks[q.id] === L) lab.classList.add("wrong"); }
-      opts.append(lab);
-    });
-    li.append(opts);
-    const act = el("div", "qact");
-    if (!shown) {
-      const hint = el("span", "small");
-      act.append(button("Check", "primary", () => {
-        if (!d.picks[q.id]) { hint.textContent = "Pick an answer first."; return; }
+    main.append(questionCard({
+      q, num: d.items.length === 1 ? "Drill question" : "Question " + (d.i + 1) + " of " + d.items.length, points: "", name: "drill-" + q.id, picked: d.picks[q.id], shown: !!d.checked[q.id],
+      onPick: (L) => { d.picks[q.id] = L; render(); },
+      onCheck: () => {
         d.checked[q.id] = true;
         const stats = store.get("drill:stats") || {};
         stats[q.id] = { seen: (stats[q.id]?.seen || 0) + 1, right: d.picks[q.id] === q.answer ? 1 : 0 };
-        store.set("drill:stats", stats);
-        render();
-      }), hint);
-    } else {
-      li.append(feedback(q, d.picks[q.id]));
-      act.append(button(d.i + 1 < d.items.length ? "Next question →" : "See how you did", "primary", () => { d.i++; render(); window.scrollTo({ top: 0 }); }));
-    }
-    li.append(act);
-    main.append(li);
+        store.set("drill:stats", stats); render();
+      },
+      prev: d.i > 0 ? () => { d.i--; render(); window.scrollTo({ top: 0 }); } : null,
+      next: d.checked[q.id] ? () => { d.i++; render(); window.scrollTo({ top: 0 }); } : null,
+      nextLabel: d.i + 1 < d.items.length ? "Next" : "See how you did",
+    }));
     box.append(main);
+  }
+
+  /* ---------- topics: every concept, searchable ---------- */
+  function classesFromSources(list) { const s = new Set(); (list || []).forEach((x) => { const m = String(x).match(/^C(\d)/); if (m) s.add(+m[1]); }); return [...s]; }
+  function buildIndex() {
+    if (P.idx) return P.idx;
+    const idx = [];
+    exams().forEach((ex) => {
+      ex.mcq.forEach((q, i) => idx.push({ kind: "mcq", ex, n: i + 1, where: (ex.kind === "demo" ? "Trial" : ex.title.replace("Mock exam ", "Mock ")) + " · Q" + q.id, classes: q.classes, concept: q.concept, stem: q.stem, sources: q.sources, text: [q.stem, q.concept, q.why, ...q.options].join(" ") }));
+      partsOf(ex).forEach(({ o, pt, k }, i) => {
+        const cl = classesFromSources(pt.sources);
+        idx.push({ kind: "open", ex, n: i + 1, where: (ex.kind === "demo" ? "Trial" : ex.title.replace("Mock exam ", "Mock ")) + " · " + k, classes: cl.length ? cl : ex.focus, concept: o.title, stem: pt.prompt, sources: pt.sources, text: [o.title, pt.prompt, ...pt.guide.map((g) => g.text)].join(" ") });
+      });
+    });
+    (P.content.drill || []).forEach((q) => idx.push({ kind: "drill", q, where: "Drill", classes: q.classes, concept: q.concept, stem: q.stem, sources: q.sources, text: [q.stem, q.concept, q.why, ...q.options].join(" ") }));
+    P.idx = idx; return idx;
+  }
+  function openItem(it) {
+    if (it.kind === "mcq") go("practise/" + it.ex.id + "/a/" + it.n);
+    else if (it.kind === "open") go("practise/" + it.ex.id + "/b/" + it.n);
+    else startDrill([], [it.q]);
+  }
+  function qrow(it, terms) {
+    const b = el("button", "qr"); b.type = "button";
+    const w = el("span", "where", it.where); if (it.ex) w.style.setProperty("--x", xColor(it.ex));
+    const s = el("span", "s");
+    if (terms && terms.length) { const cn = el("span", "cn"); highlight(cn, it.concept || "", terms); s.append(cn); highlight(s, snippet(it, terms), terms, true); }
+    else s.textContent = it.stem;
+    b.append(w, s, icon("next"));
+    b.addEventListener("click", () => openItem(it));
+    return b;
+  }
+  function snippet(it, terms) {
+    const t = it.text, lo = t.toLowerCase(); let at = -1;
+    for (const x of terms) { const i = lo.indexOf(x); if (i >= 0 && (at < 0 || i < at)) at = i; }
+    if (at < 0 || at < 120) return it.stem;
+    return "…" + t.slice(Math.max(0, at - 60), at + 160) + "…";
+  }
+  function highlight(node, text, terms, append) {
+    const re = new RegExp("(" + terms.map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "ig");
+    text.split(re).forEach((part, i) => node.append(i % 2 ? el("mark", null, part) : document.createTextNode(part)));
+    return node;
+  }
+
+  function renderTopics(box) {
+    const idx = buildIndex();
+    const head = el("div", "hero-text");
+    head.append(el("p", "kicker", "Topics · every framework, case and concept"), el("h1", null, "Find a topic"),
+      el("p", "lede", "Search across all questions, explanations and marking guides, or browse the concepts class by class. Open any question straight from here."));
+    box.append(head);
+    const sb = el("div", "searchbox"); sb.append(icon("search"));
+    const input = el("input"); input.type = "search"; input.placeholder = "Search: network effects, GDPR, Marriott, value–irritation…"; input.value = P.tq; input.setAttribute("aria-label", "Search topics");
+    sb.append(input); box.append(sb);
+    const area = el("div"); box.append(area);
+    const draw = () => {
+      area.textContent = "";
+      const terms = P.tq.toLowerCase().split(/\s+/).filter((x) => x.length > 1);
+      if (terms.length) {
+        const hits = idx.filter((it) => { const t = it.text.toLowerCase(); return terms.every((x) => t.includes(x)); });
+        const sec = el("section", "sect"); sec.append(h2(hits.length + (hits.length === 1 ? " match" : " matches"), "for “" + P.tq.trim() + "”"));
+        const list = panel("results");
+        if (!hits.length) list.append(el("p", "empty", "Nothing found. Try a shorter word, a company name or a class topic."));
+        hits.slice(0, 80).forEach((it) => list.append(qrow(it, terms)));
+        sec.append(list); area.append(sec); return;
+      }
+      const lay = el("div", "tlayout");
+      const side = panel("tclasses");
+      const allBtn = el("button", "tcl"); allBtn.type = "button"; allBtn.append(el("span", "n", "∗"), el("span", null, "All classes"), el("span", "c", String(idx.filter((it) => it.kind !== "open").length)));
+      allBtn.style.setProperty("--cc", "var(--accent)"); allBtn.setAttribute("aria-current", String(!P.tclass));
+      allBtn.addEventListener("click", () => { P.tclass = 0; draw(); });
+      side.append(allBtn);
+      for (let c = 1; c <= 9; c++) {
+        const b = el("button", "tcl"); b.type = "button"; b.style.setProperty("--cc", "var(--c" + c + ")");
+        b.append(el("span", "n", String(c)), el("span", null, CLASS_NAMES[c]), el("span", "c", String(idx.filter((it) => it.kind !== "open" && it.classes.includes(c)).length)));
+        b.setAttribute("aria-current", String(P.tclass === c));
+        b.addEventListener("click", () => { P.tclass = c; draw(); window.scrollTo({ top: 0 }); });
+        side.append(b);
+      }
+      const right = el("div");
+      (P.tclass ? [P.tclass] : [1, 2, 3, 4, 5, 6, 7, 8, 9]).forEach((c) => {
+        const items = idx.filter((it) => it.classes.includes(c) && it.kind !== "open");
+        const by = new Map();
+        items.forEach((it) => { const k = it.concept || "Other"; if (!by.has(k)) by.set(k, []); by.get(k).push(it); });
+        const sec = el("section", "tsect"); sec.style.setProperty("--cc", "var(--c" + c + ")");
+        const th = el("div", "th"); th.append(el("span", "n", String(c)), el("h3", null, CLASS_NAMES[c]), el("span", "c", by.size + " concepts · " + items.length + " questions"));
+        sec.append(th);
+        const cs = el("div", "concepts");
+        [...by.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])).forEach(([name, list]) => {
+          const d = el("details", "cpt"); const sm = el("summary"); sm.append(el("b", null, name), el("span", "c", list.length + (list.length === 1 ? " question" : " questions")));
+          d.append(sm);
+          const srcs = [...new Set(list.flatMap((it) => it.sources || []))].slice(0, 8);
+          d.addEventListener("toggle", () => {
+            if (!d.open || d.dataset.filled) return; d.dataset.filled = "1";
+            const s = sourcesLine(srcs); if (s) d.append(s);
+            const rows = el("div", "qrows"); list.forEach((it) => rows.append(qrow(it))); d.append(rows);
+          });
+          cs.append(d);
+        });
+        sec.append(cs); right.append(sec);
+      });
+      lay.append(side, right); area.append(lay);
+    };
+    let tmr = null;
+    input.addEventListener("input", () => { clearTimeout(tmr); tmr = setTimeout(() => { P.tq = input.value; draw(); }, 120); });
+    draw();
   }
 
   /* ---------- render ---------- */
   async function render() {
     const box = root();
-    clearInterval(P.timerTick);
     if (!P.content) {
-      box.textContent = "";
-      box.append(el("p", "loading", "Opening the practice questions…"));
+      box.textContent = ""; box.append(el("p", "loading", "Opening the practice questions…"));
       try { await loadContent(); }
       catch (e) {
         box.textContent = "";
         const g = el("div", "gate");
         g.append(el("b", null, P.failed === "key" ? "These questions don't open with this link" : "Can't load the practice questions"),
           el("p", null, P.failed === "key" ? "Ask Antonis for the current invitation link." : "Check your internet connection and reload the page."));
-        box.append(g);
-        return;
+        box.append(g); return;
       }
     }
-    box.textContent = "";
-    if (P.view.name === "exam") renderExam(box);
+    keyTarget = null;
+    box.textContent = ""; box.style.removeProperty("--x");
+    if (P.view.name === "topics") renderTopics(box);
+    else if (P.view.name === "exam") renderExam(box);
     else if (P.view.name === "drill") renderDrill(box);
     else renderHome(box);
   }
 
+  function onKey(e) {
+    if (!keyTarget || S.tab !== "practise" || P.drawer) { if (e.key === "Escape") closeDrawer(); return; }
+    const t = e.target, tag = t && t.tagName;
+    if (tag === "TEXTAREA" || (tag === "INPUT" && t.type !== "radio") || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Enter" && (tag === "BUTTON" || tag === "A" || tag === "SUMMARY")) return;
+    const k = e.key.toLowerCase();
+    const L = "abcde".includes(k) && k.length === 1 ? k.toUpperCase() : "12345".includes(k) && k.length === 1 ? LETTERS[+k - 1] : null;
+    if (L) { e.preventDefault(); keyTarget.pick(L); }
+    else if (e.key === "Enter") { e.preventDefault(); keyTarget.enter(); }
+    else if (e.key === "ArrowRight" && keyTarget.next) { e.preventDefault(); keyTarget.next(); }
+    else if (e.key === "ArrowLeft" && keyTarget.prev) { e.preventDefault(); keyTarget.prev(); }
+  }
+
   return {
     init() {
-      window.addEventListener("resize", () => { if (P.view.name === "exam" && S.tab === "practise") { clearTimeout(P.rs); P.rs = setTimeout(() => { if (!document.activeElement || document.activeElement.tagName !== "TEXTAREA") render(); }, 250); } });
-      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && P.view.name === "exam" && P.view.tab === "b" && S.tab === "practise") loadAnswers(P.view.id); });
+      paintTheme(); tickClock(); setInterval(tickClock, 30000);
+      $("#theme").addEventListener("click", () => {
+        const next = isDark() ? "light" : "dark";
+        document.documentElement.dataset.theme = next; store.set("theme", next); paintTheme();
+      });
+      window.addEventListener("hashchange", route);
+      document.addEventListener("keydown", onKey);
+      let rs = null, wasWide = window.matchMedia("(min-width: 1180px)").matches;
+      window.addEventListener("resize", () => {
+        clearTimeout(rs); rs = setTimeout(() => {
+          const wide = window.matchMedia("(min-width: 1180px)").matches;
+          if (wide !== wasWide && P.view.name === "exam" && S.tab === "practise" && document.activeElement?.tagName !== "TEXTAREA") { closeDrawer(); render(); }
+          wasWide = wide;
+        }, 200);
+      });
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && P.view.name === "exam" && P.view.sec === "b" && S.tab === "practise") loadAnswers(P.view.id); });
     },
-    show() { render(); },
-    signedIn() { if (P.view.name === "exam") { const id = P.view.id; P.answersAt.delete(id); loadAnswers(id, true); } },
+    route,
+    signedIn() { if (P.view.name === "exam") { P.answersAt.delete(P.view.id); loadAnswers(P.view.id, true); } },
   };
 })();
 

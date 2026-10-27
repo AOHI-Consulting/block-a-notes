@@ -58,20 +58,20 @@ function badge(name) {
   const map = { pdf: "PDF", doc: "DOC", docx: "DOC", ppt: "PPT", pptx: "PPT", xls: "XLS", xlsx: "XLS", csv: "CSV", txt: "TXT", md: "MD", png: "IMG", jpg: "IMG", jpeg: "IMG", gif: "IMG", webp: "IMG", heic: "IMG", mp4: "VID", mov: "VID", mp3: "AUD", m4a: "AUD", zip: "ZIP", key: "KEY", pages: "PAGES", numbers: "NUM" };
   return map[ext] || "FILE";
 }
-function gate(t, p) { $("#app").hidden = true; $("#practise").hidden = true; $("#tabs").hidden = true; $("#gate").hidden = false; $("#gateT").textContent = t; $("#gateP").textContent = p; }
+function gate(t, p) { $("#notesview").hidden = true; $("#practise").hidden = true; $("#tabs").hidden = true; $("#gate").hidden = false; $("#gateT").textContent = t; $("#gateP").textContent = p; }
 function upmsg(t, warn) { const m = $("#upmsg"); m.textContent = t; m.classList.toggle("warn", !!warn); }
 
-/* ---------- tabs ---------- */
+/* ---------- tabs (the router in practise.js decides which one shows) ---------- */
 function showTab(tab) {
-  S.tab = tab === "notes" ? "notes" : "practise";
-  store.set("tab", S.tab);
-  $("#tabP").setAttribute("aria-selected", String(S.tab === "practise"));
-  $("#tabN").setAttribute("aria-selected", String(S.tab === "notes"));
-  $("#practise").hidden = S.tab !== "practise";
-  $("#app").hidden = S.tab !== "notes";
+  const was = S.tab;
+  S.tab = ["practise", "topics", "notes"].includes(tab) ? tab : "practise";
+  [["practise", "#tabP"], ["topics", "#tabT"], ["notes", "#tabN"]].forEach(([t, id]) => {
+    if (S.tab === t) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
+  });
+  $("#practise").hidden = S.tab === "notes";
+  $("#notesview").hidden = S.tab !== "notes";
   document.body.dataset.tab = S.tab;
-  if (S.tab === "notes") { renderPeople(); renderSheet(true); }
-  else if (window.Practise) Practise.show();
+  if (S.tab === "notes" && was !== "notes") { renderPeople(); renderSheet(true); poll(); }
 }
 
 /* ---------- people list ---------- */
@@ -414,8 +414,6 @@ function wireFiles() {
 
 async function start() {
   wireFiles();
-  $("#tabP").addEventListener("click", () => showTab("practise"));
-  $("#tabN").addEventListener("click", () => showTab("notes"));
   const m = location.hash.match(/[#&]g=([A-Za-z0-9_-]{8,64})/);
   if (m) { store.set("g", m[1]); history.replaceState(null, "", location.pathname + location.search); }
   S.g = store.get("g");
@@ -435,8 +433,8 @@ async function start() {
   }
   if (S.me) { S.selected = S.me.id; S.myFiles = filesOf(S.pages.get(S.me.id)); }
   $("#tabs").hidden = false;
-  if (window.Practise) Practise.init();
-  showTab(store.get("tab") || "practise");
+  Practise.init();
+  Practise.route();
 
   setInterval(poll, POLL_MS);
   setInterval(() => { if (S.tab === "notes") { renderPeople(); renderStamp(); } }, 60000);
