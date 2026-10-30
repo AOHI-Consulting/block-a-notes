@@ -59,12 +59,12 @@ const Practise = (() => {
   function sourceLabel(s) {
     let m;
     if ((m = s.match(/^C(\d) S(\d+)(?:[–-](\d+))?$/))) return "Class " + m[1] + " slides · " + (m[3] ? "slides " + m[2] + "–" + m[3] : "slide " + m[2]);
-    if ((m = s.match(/^C(\d)(?:[ab]| pt\d)?(?: \d:\d\d.*)?$/))) return "Class " + m[1] + " transcript";
+    if ((m = s.match(/^C(\d)(?:[ab]| pt\d)?(?: \d:\d\d.*| transcript)?$/))) return "Class " + m[1] + " transcript";
     if ((m = s.match(/^pp?\. (\d+)(?:[–-](\d+))?$/))) {
       const ch = BOOK_CH.reduce((f, c, i) => (+m[1] >= c[0] ? i : f), 0);
       return "Gillingham " + s + " (ch. " + (ch + 1) + ", " + BOOK_CH[ch][1] + ")";
     }
-    if ((m = s.match(/^Key Q?(\w+)$/))) return "His answer key · " + (/^\d+$/.test(m[1]) ? "Q" : "") + m[1];
+    if ((m = s.match(/^Key Q?(\w+)$/))) return "His answer key · " + (/^\d/.test(m[1]) ? "Q" : "") + m[1];
     if ((m = s.match(/^Demo Q(\d+)$/))) return "His trial exam · Q" + m[1];
     if (/^Exhibit \d+$/.test(s)) return "The case · " + s;
     return s.replace(/^C(\d) reading$/, "Class $1 reading").replace(/\bC(\d) reading\b/, "class $1 reading");
@@ -125,18 +125,21 @@ const Practise = (() => {
 
   /* ---------- content ---------- */
   const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  async function openBox(file) {
+    const r = await fetch(file + "?v=" + (document.body.dataset.v || ""), { cache: "no-cache" });
+    if (!r.ok) throw new Error("fetch " + r.status);
+    const box = await r.json();
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(S.g), "PBKDF2", false, ["deriveKey"]);
+    const k = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: b64(box.salt), iterations: box.iter },
+      base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(box.iv) }, k, b64(box.data));
+    return JSON.parse(new TextDecoder().decode(plain));
+  }
   async function loadContent() {
     if (P.content) return P.content;
     if (P.loading) return P.loading;
     P.loading = (async () => {
-      const r = await fetch("content.enc?v=" + (document.body.dataset.v || ""), { cache: "no-cache" });
-      if (!r.ok) throw new Error("fetch " + r.status);
-      const box = await r.json();
-      const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(S.g), "PBKDF2", false, ["deriveKey"]);
-      const k = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: b64(box.salt), iterations: box.iter },
-        base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
-      const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(box.iv) }, k, b64(box.data));
-      P.content = JSON.parse(new TextDecoder().decode(plain));
+      P.content = await openBox("content.enc");
       await slideManifest();
       return P.content;
     })();
@@ -169,10 +172,13 @@ const Practise = (() => {
   function parse() {
     const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
     const seg = h.split("/").filter(Boolean);
+    // the Study tab is opt-in per device: opening #/study once turns it on, and then it is home
+    if (seg[0] === "study") { store.set("study:on", true); return { tab: "study", name: "study", seg: seg.slice(1) }; }
+    if (!seg.length && store.get("study:on")) return { tab: "study", name: "study", seg: [] };
     if (seg[0] === "notes") return { tab: "notes" };
     if (seg[0] === "topics") return { tab: "topics", name: "topics" };
     if (seg[0] === "slides") return { tab: "slides", name: "slides" };
-    if (seg[0] === "drill") return { tab: "practise", name: "drill" };
+    if (seg[0] === "drill") return { tab: /^study/.test(P.drill?.from || "") ? "study" : "practise", name: "drill" };
     if (seg[0] === "practise" && seg[1]) {
       const sec = ["case", "a", "b", "score"].includes(seg[2]) ? seg[2] : "case";
       return { tab: "practise", name: "exam", id: seg[1], sec, n: parseInt(seg[3], 10) || 0 };
@@ -183,18 +189,22 @@ const Practise = (() => {
     const h = "#/" + path;
     if (location.hash === h) route(); else location.hash = h;
   }
+  function studyTab() {
+    document.getElementById("tabY").hidden = !store.get("study:on");
+    document.querySelectorAll("#tabs .tab:not([hidden]) i").forEach((i, k) => (i.textContent = k + 1));
+  }
   function route() {
     const r = parse();
     clearInterval(P.timerTick);
     closeDrawer(); closeSlides();
-    showTab(r.tab);
+    studyTab(); showTab(r.tab);
     if (r.tab === "notes") return;
     const prev = P.view;
     P.view = r;
     if (r.name === "exam") store.set("last", { path: location.hash.slice(2), id: r.id, sec: r.sec });
     document.getElementById("page").classList.toggle("wide", r.name === "exam");
     render();
-    const same = prev && prev.name === r.name && prev.id === r.id && prev.sec === r.sec && prev.n === r.n;
+    const same = prev && prev.name === r.name && prev.id === r.id && prev.sec === r.sec && prev.n === r.n && String(prev.seg) === String(r.seg);
     if (!same) window.scrollTo({ top: 0 });
   }
 
@@ -1130,7 +1140,8 @@ const Practise = (() => {
     const d = P.drill;
     if (!d || !d.items.length) { go("practise"); return; }
     const head = el("div", "xhead");
-    const [backHref, backText] = { topics: ["#/topics", "Topics"], slides: ["#/slides", "Slides"] }[d.from] || ["#/practise", "All exams"];
+    const fromStudy = /^study\/c(\d)/.exec(d.from);
+    const [backHref, backText] = fromStudy ? ["#/" + d.from, "Class " + fromStudy[1]] : { topics: ["#/topics", "Topics"], slides: ["#/slides", "Slides"] }[d.from] || ["#/practise", "All exams"];
     const cr = el("nav", "crumbs"); const a = el("a"); a.href = backHref; a.append(icon("back"), document.createTextNode(backText)); cr.append(a);
     head.append(cr);
     const tt = el("div", "xtitle"); const lft = el("div", "lft");
@@ -1149,7 +1160,7 @@ const Practise = (() => {
       sp.append(el("b", null, !missed.length ? "All right. Try another round, or a full exam." : "Open the ones you missed to reread why, then retry them."));
       const btns = el("div", "btns");
       if (missed.length) btns.append(button(missed.length === 1 ? "Retry the one you missed" : "Retry the " + missed.length + " you missed", "primary", () => startDrill([...missed].sort(() => Math.random() - .5), d.from), "reset"));
-      if (d.from === "topics" || d.from === "slides") btns.append(button("Back to " + backText, missed.length ? "ghost" : "primary", () => go(d.from)));
+      if (d.from === "topics" || d.from === "slides" || fromStudy) btns.append(button("Back to " + backText, missed.length ? "ghost" : "primary", () => go(d.from)));
       else btns.append(button("New round", missed.length ? "ghost" : "primary", () => startDrill(), "play"), button("Back to exams", "ghost", () => go("practise")));
       sp.append(btns); hero.append(sp); main.append(hero);
       if (missed.length) {
@@ -1307,6 +1318,7 @@ const Practise = (() => {
     else if (P.view.name === "slides") renderLibrary(box);
     else if (P.view.name === "exam") renderExam(box);
     else if (P.view.name === "drill") renderDrill(box);
+    else if (P.view.name === "study") Study.render(box, P.view.seg);
     else renderHome(box);
   }
 
@@ -1322,7 +1334,7 @@ const Practise = (() => {
       else return;
       e.preventDefault(); return;
     }
-    if (!keyTarget || S.tab !== "practise" || P.drawer) { if (e.key === "Escape") closeDrawer(); return; }
+    if (!keyTarget || (S.tab !== "practise" && P.view.name !== "drill") || P.drawer) { if (e.key === "Escape") closeDrawer(); return; }
     const t = e.target, tag = t && t.tagName;
     if (tag === "TEXTAREA" || (tag === "INPUT" && t.type !== "radio") || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === "Enter" && (tag === "BUTTON" || tag === "A" || tag === "SUMMARY")) return;
@@ -1355,6 +1367,13 @@ const Practise = (() => {
       document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && P.view.name === "exam" && P.view.sec === "b" && S.tab === "practise") loadAnswers(P.view.id); });
     },
     route,
+    // the Study tab (study.js) reuses these, so its slide links, buttons and drill are the same as here
+    kit: {
+      icon, button, textBtn, chip, panel, h2, sourcesLine, openBox, startDrill, go, render: () => render(), CLASS_NAMES,
+      content: () => P.content, slideReady: () => !!SL.manifest,
+      openSlide: (c, n) => { if (SL.manifest?.classes?.[c]) openDoc("c" + c, n); },
+      openBook: (p) => { if (SL.manifest?.book) openDoc("book", p + (SL.manifest.book.offset || 0)); },
+    },
     signedIn() { if (P.view.name === "exam") { P.answersAt.delete(P.view.id); loadAnswers(P.view.id, true); } },
   };
 })();
