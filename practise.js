@@ -172,7 +172,9 @@ const Practise = (() => {
   function parse() {
     const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
     const seg = h.split("/").filter(Boolean);
-    if (!seg.length || seg[0] === "study") return { tab: "study", name: "study", seg: seg.slice(1) };
+    // the Study tab is opt-in per device: opening #/study once turns it on, and then it is home
+    if (seg[0] === "study") { store.set("study:on", true); return { tab: "study", name: "study", seg: seg.slice(1) }; }
+    if (!seg.length && store.get("study:on")) return { tab: "study", name: "study", seg: [] };
     if (seg[0] === "notes") return { tab: "notes" };
     if (seg[0] === "topics") return { tab: "topics", name: "topics" };
     if (seg[0] === "slides") return { tab: "slides", name: "slides" };
@@ -187,11 +189,15 @@ const Practise = (() => {
     const h = "#/" + path;
     if (location.hash === h) route(); else location.hash = h;
   }
+  function studyTab() {
+    document.getElementById("tabY").hidden = !store.get("study:on");
+    document.querySelectorAll("#tabs .tab:not([hidden]) i").forEach((i, k) => (i.textContent = k + 1));
+  }
   function route() {
     const r = parse();
     clearInterval(P.timerTick);
     closeDrawer(); closeSlides();
-    showTab(r.tab);
+    studyTab(); showTab(r.tab);
     if (r.tab === "notes") return;
     const prev = P.view;
     P.view = r;
