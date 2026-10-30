@@ -59,12 +59,12 @@ const Practise = (() => {
   function sourceLabel(s) {
     let m;
     if ((m = s.match(/^C(\d) S(\d+)(?:[–-](\d+))?$/))) return "Class " + m[1] + " slides · " + (m[3] ? "slides " + m[2] + "–" + m[3] : "slide " + m[2]);
-    if ((m = s.match(/^C(\d)(?:[ab]| pt\d)?(?: \d:\d\d.*)?$/))) return "Class " + m[1] + " transcript";
+    if ((m = s.match(/^C(\d)(?:[ab]| pt\d)?(?: \d:\d\d.*| transcript)?$/))) return "Class " + m[1] + " transcript";
     if ((m = s.match(/^pp?\. (\d+)(?:[–-](\d+))?$/))) {
       const ch = BOOK_CH.reduce((f, c, i) => (+m[1] >= c[0] ? i : f), 0);
       return "Gillingham " + s + " (ch. " + (ch + 1) + ", " + BOOK_CH[ch][1] + ")";
     }
-    if ((m = s.match(/^Key Q?(\w+)$/))) return "His answer key · " + (/^\d+$/.test(m[1]) ? "Q" : "") + m[1];
+    if ((m = s.match(/^Key Q?(\w+)$/))) return "His answer key · " + (/^\d/.test(m[1]) ? "Q" : "") + m[1];
     if ((m = s.match(/^Demo Q(\d+)$/))) return "His trial exam · Q" + m[1];
     if (/^Exhibit \d+$/.test(s)) return "The case · " + s;
     return s.replace(/^C(\d) reading$/, "Class $1 reading").replace(/\bC(\d) reading\b/, "class $1 reading");

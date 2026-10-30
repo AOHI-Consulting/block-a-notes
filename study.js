@@ -296,7 +296,18 @@ const Study = (() => {
       ta.addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(() => save((s) => (s.text = ta.value)), 300); });
       const how = el("div", "st-how"); how.hidden = !st.shown;
       how.append(el("p", "kicker", "How your notes answer it · exam notes p. " + lastp(n)), notesDoc(q.html, n));
-      const marks = el("div", "st-marks"); marks.hidden = !st.shown;
+      // an example answer that walks the same steps on a case: the trial exam's, or an imagined hotel
+      const x = q.answer, ans = el("div", "st-ans"); ans.hidden = !(x && st.answer);
+      if (x) {
+        ans.append(el("p", "kicker", "An example answer"));
+        if (x.case) ans.append(rich("p", "st-case", x.case));
+        const ol = el("ol"); x.points.forEach((p) => ol.append(rich("li", null, p)));
+        ans.append(ol, rich("p", "st-concl", x.conclusion));
+        const refs = K().sourcesLine(x.refs);
+        if (refs) ans.append(refs);
+        ans.append(el("p", "small", "One good answer, not the only one. The points come from the framework, evidence from the case, your judgement and a clear recommendation."));
+      }
+      const marks = el("div", "st-marks"); marks.hidden = how.hidden && ans.hidden;
       marks.append(el("span", "small", "How did you do?"));
       [["got", "Got it", "m-got"], ["part", "Partly", "m-part"], ["miss", "Missed it", "m-miss"]].forEach(([k, l, cls]) => {
         const b = el("button", "st-mark " + cls, l); b.type = "button"; b.setAttribute("aria-pressed", String(st.mark === k));
@@ -307,10 +318,18 @@ const Study = (() => {
         marks.append(b);
       });
       const show = K().button(st.shown ? "Hide how to answer" : "Show how to answer", "small", () => {
-        const on = how.hidden; save((s) => (s.shown = on)); how.hidden = marks.hidden = !on;
+        const on = how.hidden; save((s) => (s.shown = on)); how.hidden = !on; marks.hidden = how.hidden && ans.hidden;
         show.lastChild.textContent = on ? "Hide how to answer" : "Show how to answer";
       }, "eye");
-      card.append(el("p", "kicker", "Likely question " + (i + 1) + " of " + c.likely.length), ask, ta, show, how, marks);
+      const btns = el("div", "btns"); btns.append(show);
+      if (x) {
+        const see = K().button(ans.hidden ? "Show the answer" : "Hide the answer", "small", () => {
+          const on = ans.hidden; save((s) => (s.answer = on)); ans.hidden = !on; marks.hidden = how.hidden && ans.hidden;
+          see.lastChild.textContent = on ? "Hide the answer" : "Show the answer";
+        }, "check");
+        btns.append(see);
+      }
+      card.append(el("p", "kicker", "Likely question " + (i + 1) + " of " + c.likely.length), ask, ta, btns, how, ans, marks);
       w.append(card);
     });
     const nav = el("div", "st-nav");
