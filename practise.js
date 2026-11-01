@@ -48,8 +48,10 @@ const Practise = (() => {
     return b;
   }
   function textBtn(text, fn, cls) { const b = el("button", "tbtn" + (cls ? " " + cls : ""), text); b.type = "button"; b.addEventListener("click", fn); return b; }
-  function chip(c) { const s = el("span", "chip", "C" + c); s.style.setProperty("--cc", "var(--c" + c + ")"); s.title = "Class " + c + ": " + (CLASS_NAMES[c] || ""); return s; }
-  function chips(classes) { const w = el("span", "chips"); (classes || []).forEach((c) => w.append(chip(c))); return w; }
+  // names: the class names of another course (a drill from Study); LDD's by default
+  // u: how the course calls its sessions (LRD has workshops: "WS4"); classes by default
+  function chip(c, name, u) { const s = el("span", "chip", (u?.short || "C") + c); s.style.setProperty("--cc", u?.color || "var(--c" + c + ", var(--accent))"); s.title = (u?.name || "Class") + " " + c + ": " + (name || (u ? "" : CLASS_NAMES[c]) || ""); return s; }
+  function chips(classes, names, u) { const w = el("span", "chips"); (classes || []).forEach((c) => w.append(chip(c, names?.[c], u && { ...u, color: u.colors?.[c] }))); return w; }
   // References are stored as short codes ("C7 S43", "C4 0:48", "p. 212", "Key Q3") and shown in plain words.
   // Students only have the slides, the book and the trial exam, so anything from a class itself is
   // shown as that class's transcript, without times.
@@ -70,7 +72,8 @@ const Practise = (() => {
     return s.replace(/^C(\d) reading$/, "Class $1 reading").replace(/\bC(\d) reading\b/, "class $1 reading");
   }
   const sourceLabels = (list) => [...new Set((list || []).map(sourceLabel))];
-  function sourcesLine(list) {
+  // links: false for a course whose decks aren't in the viewer (only LDD's are)
+  function sourcesLine(list, links = true) {
     if (!list || !list.length) return null;
     const p = el("div", "srcs");
     const lab = el("span", "srclab"); lab.append(icon("book"), document.createTextNode("Look it up")); p.append(lab);
@@ -78,7 +81,7 @@ const Practise = (() => {
     list.forEach((s) => {
       const t = sourceLabel(s), m = s.match(/^C(\d) S(\d+)/), pg = s.match(/^pp?\. (\d+)/);
       if (seen.has(t)) return; seen.add(t);
-      const target = m && SL.manifest?.classes?.[m[1]] ? ["c" + m[1], +m[2], "Open this slide"]
+      const target = !links ? null : m && SL.manifest?.classes?.[m[1]] ? ["c" + m[1], +m[2], "Open this slide"]
         : pg && SL.manifest?.book ? ["book", +pg[1] + (SL.manifest.book.offset || 0), "Open this page of the book"] : null;
       if (target) {
         const b = el("button", "src link", t); b.type = "button"; b.title = target[2];
@@ -234,7 +237,7 @@ const Practise = (() => {
   function renderHome(box) {
     const hero = el("section", "hero");
     const ht = el("div", "hero-text");
-    ht.append(el("p", "kicker", "Digital Developments · individual exam"), el("h1", null, "Practise for Friday's exam"),
+    ht.append(el("p", "kicker", "Digital Developments · individual exam"), el("h1", null, untilExam() ? "Practise for Friday's exam" : "Practise in the exam's format"),
       el("p", "lede", "A quick drill by class with no case to read, his trial exam with his answer key, and three mock exams in the same format. Every answer tells you where to look it up."));
     const resume = el("div", "resume");
     const last = store.get("last");
@@ -248,7 +251,7 @@ const Practise = (() => {
     const cd = panel("count");
     const u = untilExam(), calm = countdownOff();
     const ctop = el("div", "ctop");
-    ctop.append(el("p", "kicker", !u ? "Exam day" : calm ? "The exam" : "The exam starts in"));
+    ctop.append(el("p", "kicker", !u ? "The exam was on" : calm ? "The exam" : "The exam starts in"));
     if (u) {
       const tg = button(calm ? "Show countdown" : "Hide", "ghost small", () => { store.set("countdown:off", !calm); tickClock(); render(); }, calm ? "eye" : "eyeoff");
       tg.title = calm ? "Show the days and hours until the exam" : "Hide the countdown here and in the top bar, on this device";
@@ -260,7 +263,7 @@ const Practise = (() => {
       [[u.d, "days"], [u.h, "hours"], [u.m, "min"]].forEach(([v, l]) => { const s = el("span", null, String(v)); s.append(el("small", null, l)); big.append(s); });
       cd.append(big);
     } else cd.append(el("div", "big calm", "Friday 30 October"));
-    const when = el("p", "when"); when.append(el("b", null, u && !calm ? "Fri 30 Oct, 11:00–14:00" : "11:00–14:00"), document.createTextNode(" · room opens 10:30, last entry 11:20 · one PDF of notes, max 20 MB"));
+    const when = el("p", "when"); when.append(el("b", null, u && !calm ? "Fri 30 Oct, 11:00–14:00" : "11:00–14:00"), document.createTextNode(u ? " · room opens 10:30, last entry 11:20 · one PDF of notes, max 20 MB" : " · 3 hours, open book: one PDF of notes, max 20 MB"));
     cd.append(when);
     hero.append(ht, cd);
     box.append(hero);
@@ -539,7 +542,7 @@ const Practise = (() => {
   function questionCard(o) {
     const card = panel("qcard");
     const top = el("div", "qtop"); top.append(el("span", "qn", o.num));
-    const r = el("span"); if (o.points === "") r.append(chips(o.q.classes)); else r.append(el("span", "qp", o.points));
+    const r = el("span"); if (o.points === "") r.append(chips(o.q.classes, o.q.names, o.q.unit)); else r.append(el("span", "qp", o.points));
     top.append(r);
     card.append(top, el("p", "stem", o.q.stem));
     const opts = el("div", "opts"); opts.setAttribute("role", "radiogroup");
@@ -580,7 +583,7 @@ const Practise = (() => {
     f.append(h);
     if (q.concept) f.append(el("p", "concept", q.concept));
     f.append(el("p", null, q.why));
-    const s = sourcesLine(q.sources); if (s) f.append(s);
+    const s = sourcesLine(q.sources, !q.noLinks); if (s) f.append(s);
     return f;
   }
 
@@ -1142,8 +1145,8 @@ const Practise = (() => {
     const d = P.drill;
     if (!d || !d.items.length) { go("practise"); return; }
     const head = el("div", "xhead");
-    const fromStudy = /^study\/c(\d)/.exec(d.from);
-    const [backHref, backText] = fromStudy ? ["#/" + d.from, "Class " + fromStudy[1]] : { topics: ["#/topics", "Topics"], slides: ["#/slides", "Slides"] }[d.from] || ["#/practise", "All exams"];
+    const fromStudy = /^study\/(?:[a-z0-9-]+\/)?c(\d+)/.exec(d.from);
+    const [backHref, backText] = fromStudy ? ["#/" + d.from, (d.items[0]?.unit?.name || "Class") + " " + fromStudy[1]] : { topics: ["#/topics", "Topics"], slides: ["#/slides", "Slides"] }[d.from] || ["#/practise", "All exams"];
     const cr = el("nav", "crumbs"); const a = el("a"); a.href = backHref; a.append(icon("back"), document.createTextNode(backText)); cr.append(a);
     head.append(cr);
     const tt = el("div", "xtitle"); const lft = el("div", "lft");
@@ -1170,7 +1173,7 @@ const Practise = (() => {
         missed.forEach((q) => {
           const row = el("button", "rv"); row.type = "button";
           const t = el("span", "t", q.concept || q.stem.slice(0, 90)); t.append(el("small", null, sourceLabels(q.sources).join(" · ")));
-          row.append(chips(q.classes), t, icon("next"));
+          row.append(chips(q.classes, q.names, q.unit), t, icon("next"));
           row.addEventListener("click", () => { d.i = d.items.indexOf(q); d.review = true; render(); window.scrollTo({ top: 0 }); });
           list.append(row);
         });
@@ -1187,7 +1190,9 @@ const Practise = (() => {
         const stats = store.get("drill:stats") || {};
         stats[q.id] = { seen: (stats[q.id]?.seen || 0) + 1, right: d.picks[q.id] === q.answer ? 1 : 0 };
         store.set("drill:stats", stats);
-        if (window.Mem) Mem.grade("ldd", q.id, d.picks[q.id] === q.answer ? 3 : 1);   // the drill is the LDD course's
+        // a drill started from a course in Study belongs to that course; Practise's drill is LDD's
+        const course = (/^study\/([a-z0-9-]+)\/c\d/.exec(d.from) || [])[1] || "ldd";
+        if (window.Mem) Mem.grade(course, q.id, d.picks[q.id] === q.answer ? 3 : 1);
         render();
       },
       prev: d.i > 0 ? () => { d.i--; render(); window.scrollTo({ top: 0 }); } : null,

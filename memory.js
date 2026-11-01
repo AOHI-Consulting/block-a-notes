@@ -3,7 +3,7 @@
    default parameters, the open scheduler Anki uses: each item has a stability s (days until your chance
    of recalling it falls to 90%) and a difficulty d (1–10), and recall fades as (1 + 19/81 · days/s)^-0.5.
    Progress lives on this device and, once you have opened your page on the Notes tab, in your page's
-   private progress, so phone and laptop share it. Keys: mem:<course> (items), mem:days (reviews per day). */
+   private progress, so phone and laptop share it. Keys: mem:<course> (items), mem:days (cards done per day). */
 
 const Mem = (() => {
   const W = [0.4872, 1.4003, 3.7145, 13.8206, 5.1618, 1.2298, 0.8975, 0.031, 1.6474, 0.1367, 1.0461, 2.1072, 0.0793, 0.3246, 1.587, 0.2272, 2.8755];
@@ -35,18 +35,31 @@ const Mem = (() => {
   function grade(course, id, g, t = now()) {
     const k = "mem:" + course, b = load(k);
     b.items[id] = next(b.items[id], g, t); b.at = t; save(k, b);
+    tick(t);
+    return b.items[id];
+  }
+  // a card done today (every review, and reading something new in the daily session): the run counts these
+  function tick(t = now()) {
     const dk = load("mem:days"); dk.days[today()] = (dk.days[today()] || 0) + 1; dk.at = t; save("mem:days", dk);
     later();
-    return b.items[id];
   }
   const get = (course, id) => load("mem:" + course).items[id] || null;
   const last = (course, id) => get(course, id)?.g || null;
   function recall(course, id, t = now()) { const st = get(course, id); return st ? fade(st.s, Math.max(0, t - st.t) / DAY) : null; }
+  // How a course is going: items reviewed, known (last answer good or easy), fading (recall now under 90%).
+  function summary(course, t = now()) {
+    let seen = 0, known = 0, fading = 0;
+    for (const st of Object.values(load("mem:" + course).items)) {
+      seen++; if (st.g >= 3) known++;
+      if (fade(st.s, Math.max(0, t - st.t) / DAY) < 0.9) fading++;
+    }
+    return { seen, known, fading };
+  }
   // Start items from older progress (before this model): as if reviewed now with that grade. Never overwrites.
   function seed(course, list) {
     const k = "mem:" + course, b = load(k), t = now(); let added = 0;
     list.forEach(([id, g]) => { if (id && g && !b.items[id]) { b.items[id] = next(null, g, t); added++; } });
-    if (added) { b.at = Math.max(b.at, t); save(k, b); later(); }
+    if (added) { b.at = Math.max(b.at, t); save(k, b); later(); setTimeout(() => window.dispatchEvent(new Event("mem-changed")), 0); }
     return added;
   }
 
@@ -121,7 +134,7 @@ const Mem = (() => {
   }
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync(); else if (sy.timer) sync(); });
 
-  return { grade, get, last, recall, seed, sync, status, today, days: () => load("mem:days").days, _next: next, _merge: merge };
+  return { grade, tick, get, last, recall, seed, summary, sync, status, today, days: () => load("mem:days").days, _next: next, _merge: merge };
 })();
 
 window.Mem = Mem;
