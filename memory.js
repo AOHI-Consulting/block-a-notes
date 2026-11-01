@@ -3,7 +3,8 @@
    default parameters, the open scheduler Anki uses: each item has a stability s (days until your chance
    of recalling it falls to 90%) and a difficulty d (1–10), and recall fades as (1 + 19/81 · days/s)^-0.5.
    Progress lives on this device and, once you have opened your page on the Notes tab, in your page's
-   private progress, so phone and laptop share it. Keys: mem:<course> (items), mem:days (cards done per day). */
+   private progress, so phone and laptop share it. Keys: mem:<course> (items), mem:days (cards done per day),
+   mem:notes-<course> (your own notes). */
 
 const Mem = (() => {
   const W = [0.4872, 1.4003, 3.7145, 13.8206, 5.1618, 1.2298, 0.8975, 0.031, 1.6474, 0.1367, 1.0461, 2.1072, 0.0793, 0.3246, 1.587, 0.2272, 2.8755];
@@ -62,6 +63,23 @@ const Mem = (() => {
     if (added) { b.at = Math.max(b.at, t); save(k, b); later(); setTimeout(() => window.dispatchEvent(new Event("mem-changed")), 0); }
     return added;
   }
+
+  /* ---------- your own notes ----------
+     A note on a topic or a framework, in your own words. Only you see it. It is kept like progress
+     (mem:notes-<course>, one entry per item: text, last edit t, edit count n), so it syncs and merges the
+     same way: the later edit wins. An emptied note stays as "" so the deletion syncs too. */
+  const NOTE_MAX = 3000;
+  const noteKey = (course) => "mem:notes-" + course;
+  const note = (course, id) => load(noteKey(course)).items[id]?.text || "";
+  function setNote(course, id, text, t = now()) {
+    const k = noteKey(course), b = load(k), old = b.items[id];
+    text = String(text || "").slice(0, NOTE_MAX);
+    if ((old?.text || "") === text) return;
+    b.items[id] = { text, t: Math.max(t, (old?.t || 0) + 1e-3), n: (old?.n || 0) + 1 };   // later than the last edit, always
+    b.at = t; save(k, b); later();
+  }
+  const notes = (course) => Object.entries(load(noteKey(course)).items)
+    .filter(([, v]) => typeof v?.text === "string" && v.text.trim()).map(([id, v]) => ({ id, text: v.text, t: v.t }));
 
   /* ---------- across devices (your page's private progress) ---------- */
   const sy = { state: "local", at: 0, timer: null, busy: null, again: false };
@@ -134,7 +152,8 @@ const Mem = (() => {
   }
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync(); else if (sy.timer) sync(); });
 
-  return { grade, tick, get, last, recall, seed, summary, sync, status, today, days: () => load("mem:days").days, _next: next, _merge: merge };
+  return { grade, tick, get, last, recall, seed, summary, sync, status, today, days: () => load("mem:days").days,
+           note, setNote, notes, NOTE_MAX, _next: next, _merge: merge };
 })();
 
 window.Mem = Mem;
