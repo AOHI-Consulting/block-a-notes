@@ -227,6 +227,7 @@ async function openPage(name, pin) {
     renderPeople(); if (S.tab === "notes") renderSheet(true);
     upmsg(r.created ? "Your page is ready. It saves as you type." : "Welcome back.");
     if (window.Practise) Practise.signedIn();
+    if (window.Mem) Mem.sync();   // your learning progress joins your page
     return null;
   } catch (e) { return "No connection. Check your internet and try again."; }
 }
@@ -435,6 +436,7 @@ async function start() {
   $("#tabs").hidden = false;
   Practise.init();
   Practise.route();
+  if (window.Mem) Mem.sync();
 
   setInterval(poll, POLL_MS);
   setInterval(() => { if (S.tab === "notes") { renderPeople(); renderStamp(); } }, 60000);

@@ -133,7 +133,9 @@ const Practise = (() => {
     const k = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: b64(box.salt), iterations: box.iter },
       base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(box.iv) }, k, b64(box.data));
-    return JSON.parse(new TextDecoder().decode(plain));
+    if (box.z !== "gzip") return JSON.parse(new TextDecoder().decode(plain));
+    // course packs are compressed before they are encrypted
+    return new Response(new Blob([plain]).stream().pipeThrough(new DecompressionStream("gzip"))).json();
   }
   async function loadContent() {
     if (P.content) return P.content;
@@ -1184,7 +1186,9 @@ const Practise = (() => {
         d.checked[q.id] = true;
         const stats = store.get("drill:stats") || {};
         stats[q.id] = { seen: (stats[q.id]?.seen || 0) + 1, right: d.picks[q.id] === q.answer ? 1 : 0 };
-        store.set("drill:stats", stats); render();
+        store.set("drill:stats", stats);
+        if (window.Mem) Mem.grade("ldd", q.id, d.picks[q.id] === q.answer ? 3 : 1);   // the drill is the LDD course's
+        render();
       },
       prev: d.i > 0 ? () => { d.i--; render(); window.scrollTo({ top: 0 }); } : null,
       next: d.checked[q.id] ? () => { d.i = d.review ? d.items.length : d.i + 1; d.review = false; render(); window.scrollTo({ top: 0 }); } : null,

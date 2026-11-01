@@ -2,34 +2,66 @@
    time: the idea in plain words, a hotel scene, the usual mix-up, how it comes up in the exam and where
    to look it up, next to the exam notes for that topic. Then you explain the class's likely questions
    in your own words and check yourself with its drill (the same drill and scores as Practise). The
-   content arrives encrypted (study.enc) and opens with the group code, like the practice questions.
-   Progress stays on this device. Addresses: #/study, #/study/c6, #/study/c6/t/3, #/study/c6/explain,
-   #/study/c6/check, #/study/cards. */
+   content is the course pack (packs/<course>.enc, see FORMAT.md in the build folder), encrypted with
+   the group code like the practice questions. What you know is kept by Mem (memory.js), on this device
+   and, once you've opened your page, on all your devices. Addresses: #/study, #/study/c6,
+   #/study/c6/t/3, #/study/c6/explain, #/study/c6/check, #/study/cards. */
 
 const Study = (() => {
   const K = () => Practise.kit;
+  const C = "ldd";   // the course this tab shows; more courses arrive as more packs
   const T = { data: null, loading: null, failed: "", filter: "all", keys: null };
-  const first = (n) => 8 + 4 * n, lastp = (n) => 11 + 4 * n;   // class N's pages in the exam notes PDF
+  const first = (n) => 8 + 4 * n, lastp = (n) => 11 + 4 * n;   // class N's pages in the LDD exam notes PDF
 
   async function load() {
     if (T.data) return T.data;
-    if (!T.loading) T.loading = K().openBox("study.enc").then((d) => (T.data = d)).catch((e) => {
+    if (!T.loading) T.loading = K().openBox("packs/" + C + ".enc").then((p) => { T.data = view(p); seedOld(); return T.data; }).catch((e) => {
       T.loading = null; T.failed = e && e.name === "OperationError" ? "key" : "net"; throw e;
     });
     return T.loading;
   }
+  // The pack is a flat list of checked items; the tab reads it as classes with topics and questions.
+  function view(pack) {
+    const classes = {}, frameworks = [];
+    Object.entries(pack.classes).forEach(([n, c]) => (classes[n] = { ...c, cards: [], likely: [] }));
+    pack.items.forEach((it) => {
+      if (it.kind === "topic") classes[it.class].cards.push({ id: it.id, title: it.title, html: it.notes, x: it.x && { ...it.x, refs: it.refs } });
+      else if (it.kind === "prompt") classes[it.class].likely.push({ id: it.id, ask: it.ask, html: it.notes, answer: it.answer });
+      else if (it.kind === "framework") frameworks.push({ id: it.id, name: it.title, gist: it.gist, ref: it.ref, c: it.class || 0 });
+    });
+    return { course: pack.course, classes, frameworks, items: pack.items };
+  }
 
-  /* ---------- progress on this device ---------- */
+  /* ---------- progress ---------- */
   const get = (k) => store.get("study:" + k) || {};
   function update(k, fn) { const v = get(k); fn(v); store.set("study:" + k, v); }
-  const readOf = (n) => get("read")[n] || {};
-  const explainOf = (n) => get("explain")[n] || {};
+  // what you marked: 1 = can explain / knew it / got it (grade 3+), 0 = not yet (grade 1–2)
+  function readOf(n) {
+    const r = {};
+    T.data.classes[n].cards.forEach((k, i) => { const g = Mem.last(C, k.id); if (g) r[i] = g >= 3 ? 1 : 0; });
+    return r;
+  }
+  const MARK = { 1: "miss", 2: "part", 3: "got", 4: "got" }, GRADE = { got: 3, part: 2, miss: 1 };
+  const markOf = (q) => MARK[Mem.last(C, q.id)] || null;
+  const knows = (id) => Mem.last(C, id) >= 3;
+  // Progress from before the memory model (marks kept per device) starts it off, once per device.
+  function seedOld() {
+    if (store.get("study:seeded:" + C)) return;
+    const list = [], d = T.data;
+    Object.entries(get("read")).forEach(([n, r]) => Object.entries(r || {}).forEach(([i, v]) => list.push([d.classes[n]?.cards[i]?.id, v === 1 ? 3 : 1])));
+    Object.entries(get("explain")).forEach(([n, r]) => Object.entries(r || {}).forEach(([i, v]) => list.push([d.classes[n]?.likely[i]?.id, GRADE[v?.mark]])));
+    const fl = get("flash");
+    d.frameworks.forEach((f) => { const v = fl[f.name]; if (v) list.push([f.id, v.k > 0 && v.k >= v.a ? 3 : 1]); });
+    Object.entries(store.get("drill:stats") || {}).forEach(([id, v]) => list.push([id, v.right ? 3 : 1]));
+    Mem.seed(C, list);
+    store.set("study:seeded:" + C, true);
+  }
   const drillOf = (n) => (K().content()?.drill || []).filter((q) => q.classes.includes(n));
   function prog(n) {
-    const c = T.data.classes[n], r = readOf(n), x = explainOf(n), st = store.get("drill:stats") || {}, qs = drillOf(n);
+    const c = T.data.classes[n], r = readOf(n), st = store.get("drill:stats") || {}, qs = drillOf(n);
     return {
       known: c.cards.filter((_, i) => r[i] === 1).length, cards: c.cards.length,
-      done: c.likely.filter((_, i) => x[i]?.mark).length, likely: c.likely.length,
+      done: c.likely.filter((q) => markOf(q)).length, likely: c.likely.length,
       right: qs.filter((q) => st[q.id]?.right).length, missed: qs.filter((q) => st[q.id] && !st[q.id].right).length,
       fresh: qs.filter((q) => !st[q.id]).length, drill: qs.length,
     };
@@ -142,12 +174,14 @@ const Study = (() => {
 
     const s2 = el("section", "sect");
     s2.append(K().h2("Frameworks A–Z", "every framework in the exam notes, as flashcards"));
-    const fl = get("flash"), known = T.data.frameworks.filter((f) => fl[f.name]?.k).length;
+    const known = T.data.frameworks.filter((f) => knows(f.id)).length;
     const a = el("a", "panel st-tile st-wide"); a.href = "#/study/cards";
     const th = el("div", "th"); th.append(el("b", null, "Framework flashcards"));
     const ms = el("div", "st-meters"); ms.append(meter("Known", known, T.data.frameworks.length));
     a.append(th, el("p", "ln", "Read the name, say what it means and when you'd use it for a hotel, then turn the card. Exam notes pp. 5–11."), ms);
     s2.append(a); w.append(s2);
+    const sy = Mem.status();
+    w.append(el("p", "small st-sync" + (sy.state === "synced" ? " on" : ""), sy.text));
   }
 
   /* ---------- one class ---------- */
@@ -244,7 +278,7 @@ const Study = (() => {
     const rate = el("div", "st-rate");
     rate.append(el("p", null, "Could you explain this to a classmate, with a hotel example?"));
     const mark = (v) => {
-      update("read", (s) => { (s[n] = s[n] || {})[i] = v; });
+      Mem.grade(C, card.id, v ? 3 : 1);
       const rr = readOf(n), after = c.cards.findIndex((_, k) => k > i && rr[k] !== 1), any = c.cards.findIndex((_, k) => rr[k] !== 1);
       location.hash = after >= 0 ? to(after) : any >= 0 && any !== i ? to(any) : "#/study/c" + n + "/t/done";
     };
@@ -286,7 +320,7 @@ const Study = (() => {
     const c = T.data.classes[n];
     w.append(el("p", "small st-intro", "Answer each question in your own words first: a few bullets, with a framework and a hotel example. Then open how your notes answer it, and mark yourself honestly. In the exam this is your route: the question type on p. 3, the class's likely questions on p. " + lastp(n) + ", evidence from the case, then the p. 3 recipe."));
     c.likely.forEach((q, i) => {
-      const st = explainOf(n)[i] || {};
+      const st = (get("explain")[n] || {})[i] || {}, mk = markOf(q);   // your answer stays on this device
       const save = (fn) => update("explain", (s) => { s[n] = s[n] || {}; s[n][i] = s[n][i] || {}; fn(s[n][i]); });
       const card = el("article", "panel st-q");
       const ask = el("p", "ask"); ask.innerHTML = q.ask;   // from our notes
@@ -310,9 +344,9 @@ const Study = (() => {
       const marks = el("div", "st-marks"); marks.hidden = how.hidden && ans.hidden;
       marks.append(el("span", "small", "How did you do?"));
       [["got", "Got it", "m-got"], ["part", "Partly", "m-part"], ["miss", "Missed it", "m-miss"]].forEach(([k, l, cls]) => {
-        const b = el("button", "st-mark " + cls, l); b.type = "button"; b.setAttribute("aria-pressed", String(st.mark === k));
+        const b = el("button", "st-mark " + cls, l); b.type = "button"; b.setAttribute("aria-pressed", String(mk === k));
         b.addEventListener("click", () => {
-          save((s) => (s.mark = k)); refreshSteps();
+          Mem.grade(C, q.id, GRADE[k]); refreshSteps();
           marks.querySelectorAll(".st-mark").forEach((m) => m.setAttribute("aria-pressed", String(m === b)));
         });
         marks.append(b);
@@ -355,10 +389,14 @@ const Study = (() => {
     if (p.missed) btns.append(K().button(p.missed === 1 ? "The one you missed" : "The " + p.missed + " you missed", "", () => K().startDrill(order(qs.filter((q) => st[q.id] && !st[q.id].right)), from), "reset"));
     box.append(btns, el("p", "small", "New questions come first, then the ones you missed. Each answer says why, with the slide or page to look it up. The scores are shared with the drill on Practise."));
     w.append(box);
+    // the practice exams with questions on this class, read from the exams themselves
+    const exams = (K().content()?.exams || []).filter((ex) => (ex.mcq || []).some((q) => (q.classes || []).includes(n)));
     const more = el("div", "panel st-box");
-    const mocks = { 1: "Mock A", 3: "Mock A", 4: "Mock A", 2: "Mock B", 5: "Mock B", 6: "Mock B", 7: "Mock C", 8: "Mock C", 9: "Mock C" };
-    more.append(el("p", "kicker", "Then"), el("p", null, "Try this class on a case: " + mocks[n] + " covers it, and his trial exam covers every class."));
-    const mb = el("div", "btns"); mb.append(link("Open Practise", "#/practise", "small", "arrow", true));
+    more.append(el("p", "kicker", "Then"), el("p", null, exams.length
+      ? "Try this class on a case. " + (exams.length === 1 ? "This exam has" : "These exams have") + " questions on it:"
+      : "None of the practice exams has questions on this class yet."));
+    const mb = el("div", "btns");
+    exams.forEach((ex) => mb.append(link(ex.kind === "demo" ? "His trial exam" : ex.title, "#/practise/" + ex.id + "/case", "small", "arrow", true)));
     const nx = n < 9 ? n + 1 : null;
     if (nx) mb.append(link("Next class: " + T.data.classes[nx].name, "#/study/c" + nx, "ghost small", "next", true));
     more.append(mb); w.append(more);
@@ -372,7 +410,7 @@ const Study = (() => {
     return { text: f.c === 0 ? "General strategy · " + (f.ref || "his trial exam") : "Class " + f.c + (f.ref ? " · " + f.ref : "") };
   }
   function renderCards(w) {
-    const FW = T.data.frameworks, fl = get("flash");
+    const FW = T.data.frameworks;
     const head = el("div", "st-head");
     const cr = el("nav", "crumbs"), back = el("a"); back.href = "#/study"; back.append(K().icon("back"), document.createTextNode("Study")); cr.append(back);
     head.append(cr, el("p", "kicker", "Frameworks A–Z · exam notes pp. 5–11"), el("h1", null, "Framework flashcards"),
@@ -385,15 +423,17 @@ const Study = (() => {
       filters.append(b);
     });
     w.append(filters);
-    const pool = FW.filter((f) => T.filter === "all" ? true : T.filter === "new" ? !fl[f.name]?.k : f.c === +T.filter.slice(1));
+    // "Not known yet": cards whose last answer wasn't "Knew it"
+    const pool = FW.filter((f) => T.filter === "all" ? true : T.filter === "new" ? !knows(f.id) : f.c === +T.filter.slice(1));
     const deck = pool.map((f) => [Math.random(), f]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
     const stage = el("div", "st-stage"); w.append(stage);
-    let known = 0, turned = false, turn = null;
+    const tried = new Set();
+    let firstGo = 0, turned = false, turn = null;
     function show() {
       stage.textContent = ""; turned = false;
       if (!deck.length) {
         const d = el("div", "panel st-done");
-        d.append(el("p", "kicker", "Deck done"), el("h2", null, pool.length ? "You went through all " + pool.length + " cards" : "No cards here"), el("p", "small", known + " known on the first go this round."));
+        d.append(el("p", "kicker", "Deck done"), el("h2", null, pool.length ? "You went through all " + pool.length + " cards" : "No cards here"), el("p", "small", firstGo + " known on the first go this round."));
         const b = el("div", "btns"); b.append(K().button("Shuffle again", "primary", () => K().render(), "reset"), K().button("Only the ones not known yet", "", () => { T.filter = "new"; K().render(); }));
         d.append(b); stage.append(d); return;
       }
@@ -411,19 +451,22 @@ const Study = (() => {
       const tb = K().button("Turn the card", "primary", () => turn()), again = K().button("Again", "", () => answer(false)), knew = K().button("Knew it", "primary", () => answer(true), "check");
       again.hidden = knew.hidden = true;
       row.append(tb, again, knew);
-      turn = () => { turned = true; backSide.hidden = false; tb.hidden = true; again.hidden = knew.hidden = false; knew.focus(); };
+      // focus goes to the card, not to "Knew it", so a second Space can't answer for you
+      card.tabIndex = -1;
+      turn = () => { turned = true; backSide.hidden = false; tb.hidden = true; again.hidden = knew.hidden = false; card.focus({ preventScroll: true }); };
       card.append(top, el("p", "name", f.name), backSide, row);
       const hint = el("p", "hint"); hint.append(el("kbd", null, "Space"), document.createTextNode(" turn · "), el("kbd", null, "1"), document.createTextNode(" again · "), el("kbd", null, "2"), document.createTextNode(" knew it"));
       stage.append(card, hint);
     }
     function answer(ok) {
       const f = deck.shift();
-      update("flash", (s) => { const v = (s[f.name] = s[f.name] || { k: 0, a: 0 }); if (ok) v.k++; else v.a++; });
-      if (ok) known++; else deck.splice(Math.min(3, deck.length), 0, f);
+      Mem.grade(C, f.id, ok ? 3 : 1);
+      if (!tried.has(f.id)) { tried.add(f.id); if (ok) firstGo++; }
+      if (!ok) deck.splice(Math.min(3, deck.length), 0, f);
       show();
     }
     T.keys = (e) => {
-      if (e.key === " " && !turned && deck.length) turn();
+      if (e.key === " " && deck.length) { if (!turned) turn(); }   // Space only turns the card
       else if (turned && e.key === "1") answer(false);
       else if (turned && e.key === "2") answer(true);
       else return false;
@@ -437,6 +480,13 @@ const Study = (() => {
     if (tag === "TEXTAREA" || tag === "INPUT" || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === " " && (tag === "BUTTON" || tag === "A" || tag === "SUMMARY")) return;
     if (T.keys(e) !== false) e.preventDefault();
+  });
+  // progress arrived from another device: show it, unless you're typing or halfway through a deck
+  window.addEventListener("mem-changed", () => {
+    if (S.tab !== "study" || !T.data || /^#\/study\/cards/.test(location.hash)) return;
+    const a = document.activeElement;
+    if (a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT")) return;
+    K().render();
   });
 
   return { render };
