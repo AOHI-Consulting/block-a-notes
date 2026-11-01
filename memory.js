@@ -1,0 +1,127 @@
+/* Memory: what you know and what is fading, item by item. Every answer, flashcard or "I can explain
+   this" is a review with a grade (1 again, 2 hard, 3 good, 4 easy). The schedule is FSRS-4.5 with its
+   default parameters, the open scheduler Anki uses: each item has a stability s (days until your chance
+   of recalling it falls to 90%) and a difficulty d (1–10), and recall fades as (1 + 19/81 · days/s)^-0.5.
+   Progress lives on this device and, once you have opened your page on the Notes tab, in your page's
+   private progress, so phone and laptop share it. Keys: mem:<course> (items), mem:days (reviews per day). */
+
+const Mem = (() => {
+  const W = [0.4872, 1.4003, 3.7145, 13.8206, 5.1618, 1.2298, 0.8975, 0.031, 1.6474, 0.1367, 1.0461, 2.1072, 0.0793, 0.3246, 1.587, 0.2272, 2.8755];
+  const DAY = 86400;
+  const now = () => Math.floor(Date.now() / 1000);
+  const clampD = (d) => Math.min(10, Math.max(1, d));
+  const fade = (s, days) => Math.pow(1 + (19 / 81) * days / s, -0.5);
+  const d0 = (g) => clampD(W[4] - (g - 3) * W[5]);
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+
+  // the next state of an item after a review with grade g (1–4) at time t (seconds)
+  function next(st, g, t) {
+    if (!st) return { s: W[g - 1], d: r3(d0(g)), t, n: 1, l: g === 1 ? 1 : 0, g };
+    const r = fade(st.s, Math.max(0, t - st.t) / DAY);
+    const d = clampD(W[7] * d0(3) + (1 - W[7]) * (st.d - W[6] * (g - 3)));
+    const s = g === 1
+      ? Math.min(st.s, W[11] * Math.pow(d, -W[12]) * (Math.pow(st.s + 1, W[13]) - 1) * Math.exp(W[14] * (1 - r)))
+      : st.s * (1 + Math.exp(W[8]) * (11 - d) * Math.pow(st.s, -W[9]) * (Math.exp(W[10] * (1 - r)) - 1) * (g === 2 ? W[15] : 1) * (g === 4 ? W[16] : 1));
+    return { s: r3(Math.min(365, Math.max(0.01, s))), d: r3(d), t, n: st.n + 1, l: st.l + (g === 1 ? 1 : 0), g };
+  }
+
+  /* ---------- on this device ---------- */
+  const blank = () => ({ v: 1, owner: null, items: {}, days: {}, at: 0 });
+  const load = (key) => Object.assign(blank(), store.get(key) || {});
+  const save = (key, b) => store.set(key, b);
+  const pad = (x) => String(x).padStart(2, "0");
+  const today = (d = new Date()) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+
+  function grade(course, id, g, t = now()) {
+    const k = "mem:" + course, b = load(k);
+    b.items[id] = next(b.items[id], g, t); b.at = t; save(k, b);
+    const dk = load("mem:days"); dk.days[today()] = (dk.days[today()] || 0) + 1; dk.at = t; save("mem:days", dk);
+    later();
+    return b.items[id];
+  }
+  const get = (course, id) => load("mem:" + course).items[id] || null;
+  const last = (course, id) => get(course, id)?.g || null;
+  function recall(course, id, t = now()) { const st = get(course, id); return st ? fade(st.s, Math.max(0, t - st.t) / DAY) : null; }
+  // Start items from older progress (before this model): as if reviewed now with that grade. Never overwrites.
+  function seed(course, list) {
+    const k = "mem:" + course, b = load(k), t = now(); let added = 0;
+    list.forEach(([id, g]) => { if (id && g && !b.items[id]) { b.items[id] = next(null, g, t); added++; } });
+    if (added) { b.at = Math.max(b.at, t); save(k, b); later(); }
+    return added;
+  }
+
+  /* ---------- across devices (your page's private progress) ---------- */
+  const sy = { state: "local", at: 0, timer: null, busy: null, again: false };
+  const keys = () => {
+    const ks = new Set(["mem:days"]);
+    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith(LS + "mem:")) ks.add(k.slice(LS.length)); } } catch (e) {}
+    return ks;
+  };
+  // Join two copies: per item the later review wins, per day the higher count.
+  function merge(a, b) {
+    const out = blank(); let fromA = false, fromB = false;
+    for (const id of new Set([...Object.keys(a.items), ...Object.keys(b.items)])) {
+      const x = a.items[id], y = b.items[id];
+      const pick = !y || (x && (x.t > y.t || (x.t === y.t && x.n >= y.n))) ? x : y;
+      out.items[id] = pick;
+      if (pick !== y && JSON.stringify(pick) !== JSON.stringify(y)) fromA = true;
+      if (pick !== x && JSON.stringify(pick) !== JSON.stringify(x)) fromB = true;
+    }
+    for (const day of new Set([...Object.keys(a.days), ...Object.keys(b.days)])) {
+      const x = a.days[day] || 0, y = b.days[day] || 0;
+      out.days[day] = Math.max(x, y);
+      if (x > y) fromA = true; if (y > x) fromB = true;
+    }
+    out.at = Math.max(a.at || 0, b.at || 0);
+    return { out, aChanged: fromB, bChanged: fromA };   // aChanged: a must take something from b
+  }
+  function later(ms = 4000) { clearTimeout(sy.timer); sy.timer = S.me?.token ? setTimeout(sync, ms) : null; }
+  async function sync() {
+    clearTimeout(sy.timer); sy.timer = null;
+    if (!S.g || !S.me?.token || sy.state === "setup") return;
+    if (sy.busy) { sy.again = true; return sy.busy; }
+    sy.busy = (async () => {
+      let changed = false;
+      try {
+        const r = await rpc("get_progress", { g: S.g, p_token: S.me.token });
+        if (r.error) { sy.state = r.error === "signed_out" ? "local" : "error"; return; }
+        const rows = r.rows || {};
+        for (const k of new Set([...keys(), ...Object.keys(rows)])) {
+          if (!/^mem:[a-z0-9-]{1,30}$/.test(k)) continue;
+          const mine = load(k), theirs = Object.assign(blank(), rows[k]?.body || {});
+          // progress made here by someone else who was signed in on this device stays theirs
+          const local = mine.owner && mine.owner !== S.me.id ? blank() : mine;
+          const m = merge(local, theirs);
+          m.out.owner = S.me.id;
+          if (m.aChanged || local !== mine || mine.owner !== S.me.id) { save(k, m.out); if (m.aChanged || local !== mine) changed = true; }
+          const any = Object.keys(m.out.items).length || Object.keys(m.out.days).length;
+          if (any && (m.bChanged || !rows[k])) {
+            const w = await rpc("save_progress", { g: S.g, p_token: S.me.token, p_key: k, p_body: { ...m.out, owner: undefined } });
+            if (w.error) { sy.state = "error"; return; }
+          }
+        }
+        sy.state = "synced"; sy.at = Date.now();
+      } catch (e) {
+        // the progress functions aren't in the database yet (404), or no connection: stay on this device
+        sy.state = /\b404\b/.test(e.message) ? "setup" : "offline";
+      } finally {
+        sy.busy = null;
+        if (changed) window.dispatchEvent(new Event("mem-changed"));
+        if (sy.again) { sy.again = false; later(500); }
+      }
+    })();
+    return sy.busy;
+  }
+  function status() {
+    const who = S.me?.name;
+    if (!who) return { state: "local", text: "Saved on this device. Open your page on the Notes tab to keep your progress on all your devices." };
+    if (sy.state === "synced") return { state: "synced", text: "Saved to your page, " + who + ", so it follows you to every device." };
+    if (sy.state === "offline") return { state: "offline", text: "Saved on this device; it goes to your page, " + who + ", when you're back online." };
+    return { state: sy.state, text: "Saved on this device." };
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync(); else if (sy.timer) sync(); });
+
+  return { grade, get, last, recall, seed, sync, status, today, days: () => load("mem:days").days, _next: next, _merge: merge };
+})();
+
+window.Mem = Mem;

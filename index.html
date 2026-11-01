@@ -573,6 +573,8 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 .st-stat { font: 700 34px var(--mono); line-height: 1; }
 .st-left { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14.5px; }
 .st-intro { max-width: 72ch; }
+.st-sync { max-width: 72ch; }
+.st-sync.on::before { content: "●"; color: var(--good); margin-right: 6px; font-size: 10px; vertical-align: 1px; }
 
 /* the exam notes inside the Study tab: the same tables and chips as the PDF */
 .sdoc { font-size: 14.5px; line-height: 1.6; display: grid; gap: 10px; min-width: 0; }
@@ -708,7 +710,7 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30px; color: var(--muted); font-size: 12px; font-family: var(--mono); }
 </style>
 </head>
-<body data-v="16">
+<body data-v="17">
 <header class="top">
   <div class="top-in">
     <a class="logo" href="#/" aria-label="Block A Notes, home">
@@ -769,8 +771,9 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30
 </main>
 
 <footer>Only people with the invitation link can open this page.</footer>
-<script src="notes.js?v=16"></script>
-<script src="study.js?v=16"></script>
-<script src="practise.js?v=16"></script>
+<script src="notes.js?v=17"></script>
+<script src="memory.js?v=17"></script>
+<script src="study.js?v=17"></script>
+<script src="practise.js?v=17"></script>
 </body>
 </html>
