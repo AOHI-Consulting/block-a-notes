@@ -13,7 +13,9 @@ Tabs:
   take class by class (or workshop by workshop):
   each class as a story, its topics in plain words with a hotel example and the usual mix-up, open
   questions to explain in your own words, framework flashcards and a check with the drill. Courses
-  still being built show as coming.
+  still being built show as coming. You can write a note of your own on any topic or framework (only
+  you see it), and one search box finds topics, frameworks, questions, stories and your notes across
+  every course (or within one, from its home).
 - **Practise**: the lecturer's trial exam, three mock exams in the same format and a multiple-choice
   drill by class. Open answers can be shared with the group.
 - **Topics**: every concept from the questions, browsable by class and searchable.
@@ -32,6 +34,7 @@ Tabs:
 - `memory.js` keeps what each person knows, item by item, with the FSRS-4.5 schedule (the open
   scheduler Anki uses), and a count of cards done per day. It lives on the device and, once you have
   opened your page on the Notes tab, in your page's private progress, so phone and laptop share it.
+  Your own notes on topics and frameworks are kept the same way, so they are private and sync too.
 - `packs/catalog.enc` is the course list; `packs/<course>.enc` are the course packs: every topic, framework and question of a course, each
   with where it comes from and how it was checked (every quote re-checked against its source on each
   build). Compressed, then encrypted with the group code (PBKDF2 → AES-GCM).

@@ -705,6 +705,34 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 .st-q { padding: 16px 18px; display: grid; gap: 10px; }
 .st-q > .btn { justify-self: start; }
 .st-q .ask { font-size: 16px; font-weight: 650; line-height: 1.45; }
+/* your own note (study.js noteBox) and the search across courses */
+.st-mynote { display: grid; justify-items: start; }
+.st-mynote-b { width: 100%; display: grid; gap: 6px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--gold) 7%, var(--panel)); border: 1px solid color-mix(in srgb, var(--gold) 32%, var(--line)); }
+.st-mynote-h { display: flex; gap: 6px 12px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
+.st-mynote-b .kicker { color: color-mix(in srgb, var(--gold) 70%, var(--ink)); }
+.st-mynote textarea { width: 100%; min-height: 76px; resize: vertical; font: 14.5px/1.55 var(--sans); background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 11px; }
+.st-mynote textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+.st-mynote-t { white-space: pre-wrap; font-size: 14.5px; line-height: 1.55; }
+.st-noted { width: 14px; height: 14px; margin-left: 7px; vertical-align: -2px; color: var(--gold); }
+.st-search { margin-top: 2px; }
+.st-findline { margin: 8px 2px 0; }
+.st-findline:empty { display: none; }
+.st-found:empty { display: none; }
+.st-found .st-found-n { margin: 14px 2px 0; }
+.st-results .qr { text-decoration: none; align-items: start; grid-template-columns: 7.4rem minmax(0, 1fr) auto; }
+.st-results .qr .where { margin-top: 2px; justify-self: start; }
+@media (max-width: 560px) {
+  .st-results .qr { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .st-results .qr .where { grid-column: 1 / -1; margin: 0; }
+}
+.st-results .qr .s { display: grid; gap: 3px; -webkit-line-clamp: unset; overflow: visible; }
+.st-results .qr .cn { font: 650 14.5px/1.4 var(--sans); color: var(--ink); margin: 0; }
+.st-results .qr .sn { font-size: 13.5px; line-height: 1.5; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.st-results .qr .sn b { font: 600 11.5px var(--mono); color: var(--muted); }
+.st-results .qr svg { margin-top: 3px; }
+.st-results .st-more { padding: 6px 10px 8px; }
+div.qr.st-hit { cursor: default; }
+.st-q.st-here { box-shadow: 0 0 0 3px var(--accent-wash); }
 .st-q textarea { width: 100%; min-height: 110px; resize: vertical; font: 14.5px/1.55 var(--sans); background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px; }
 .st-q textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
 .st-how { border-radius: 10px; background: var(--accent-wash); padding: 12px 14px; display: grid; gap: 8px; }
@@ -809,7 +837,7 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30px; color: var(--muted); font-size: 12px; font-family: var(--mono); }
 </style>
 </head>
-<body data-v="21">
+<body data-v="22">
 <header class="top">
   <div class="top-in">
     <a class="logo" href="#/" aria-label="Block A Notes, home">
@@ -870,10 +898,10 @@ footer { max-width: 1320px; margin: 0 auto; padding: 0 clamp(14px, 3vw, 28px) 30
 </main>
 
 <footer>Only people with the invitation link can open this page.</footer>
-<script src="notes.js?v=21"></script>
-<script src="memory.js?v=21"></script>
-<script src="today.js?v=21"></script>
-<script src="study.js?v=21"></script>
-<script src="practise.js?v=21"></script>
+<script src="notes.js?v=22"></script>
+<script src="memory.js?v=22"></script>
+<script src="today.js?v=22"></script>
+<script src="study.js?v=22"></script>
+<script src="practise.js?v=22"></script>
 </body>
 </html>

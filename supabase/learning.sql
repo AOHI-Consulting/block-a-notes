@@ -1,6 +1,7 @@
 -- Learning progress: what each person knows and the days they practised, so it follows them from
--- phone to laptop. One row per person per key: 'mem:days' (reviews per day) and 'mem:<course>'
--- (per item: stability, difficulty, last review, last grade). Private: only the token from opening
+-- phone to laptop. One row per person per key: 'mem:days' (reviews per day), 'mem:<course>'
+-- (per item: stability, difficulty, last review, last grade) and 'mem:notes-<course>' (your own
+-- notes on topics and frameworks, per item: text, last edit). Private: only the token from opening
 -- your own page reads or writes your rows, and nothing lists anyone else's. Same rules as the rest:
 -- row level security with no policies, and the page only calls the two functions below, which check
 -- the group code. Run once in the Supabase SQL editor, after schema.sql.

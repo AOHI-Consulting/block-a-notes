@@ -8,8 +8,10 @@
    this device and, once you've opened your page, on all your devices.
    The daily session (#/study/today) mixes what is fading with new things from your path through each
    course you follow; today.js plans it and keeps the run.
+   You can write a note of your own on any topic or framework (only you see it), and search every course
+   and your notes from the Study home, or one course from its home.
    Addresses: #/study (the courses), #/study/today, #/study/ldd, #/study/ldd/c6, #/study/ldd/c6/t/3,
-   #/study/ldd/c6/explain, #/study/ldd/c6/check, #/study/ldd/cards. The older #/study/c6… are LDD's. */
+   #/study/ldd/c6/explain(/2), #/study/ldd/c6/check, #/study/ldd/cards. The older #/study/c6… are LDD's. */
 
 const Study = (() => {
   const K = () => Practise.kit;
@@ -19,6 +21,8 @@ const Study = (() => {
     packs: new Map(), loading: new Map(), // course id -> its pack, read as classes (view)
     course: null, meta: null, data: null, // the course on screen: id, catalog entry, pack
     filter: "all", keys: null,
+    idx: new Map(),                       // course id -> what the search can find in it
+    find: { key: "", q: "", notes: false },   // the search box: where it is, what's typed, your notes listed
   };
   const C = () => T.course;
   const base = () => "#/study/" + T.course;
@@ -159,8 +163,188 @@ const Study = (() => {
     w.append(el("p", "small st-sync" + (sy.state === "synced" ? " on" : ""), sy.text));
   }
 
+  /* ---------- your own notes ---------- */
+  // A note in your own words on a topic or a framework. Only you see it: Mem keeps it with your progress,
+  // so it follows you to your other devices once you've opened your page.
+  let pendingNote = null;   // a note still being typed: saved before the view changes
+  const flushNote = () => { const f = pendingNote; pendingNote = null; if (f) f(); };
+  function noteBox(course, id) {
+    const box = el("div", "st-mynote"), body = el("div", "st-mynote-b"), head = el("div", "st-mynote-h");
+    const state = el("span", "small", "Only you see it");
+    const ta = el("textarea"); ta.maxLength = Mem.NOTE_MAX; ta.rows = 3; ta.value = Mem.note(course, id);
+    ta.placeholder = "In your own words: an example from a hotel you know, a link to another course, a question to ask in class.";
+    ta.setAttribute("aria-label", "Your note");
+    head.append(el("p", "kicker", "Your note"), state); body.append(head, ta);
+    const grow = () => { ta.style.height = "auto"; ta.style.height = Math.max(76, ta.scrollHeight + 2) + "px"; };
+    let tm = null;
+    const save = () => { clearTimeout(tm); pendingNote = null; Mem.setNote(course, id, ta.value); state.textContent = "Saved · only you see it"; };
+    ta.addEventListener("input", () => { grow(); state.textContent = "Saving…"; pendingNote = save; clearTimeout(tm); tm = setTimeout(save, 400); });
+    ta.addEventListener("blur", () => { if (pendingNote === save) save(); });
+    const add = K().button("Add your own note", "small ghost", () => { add.hidden = true; body.hidden = false; grow(); ta.focus(); }, "pen");
+    const has = !!ta.value.trim();
+    body.hidden = !has; add.hidden = has;
+    box.append(add, body);
+    if (has) requestAnimationFrame(grow);
+    return box;
+  }
+  // the note, to read, on the answer side of a card in the daily session
+  function noteShow(course, id) {
+    const t = Mem.note(course, id).trim();
+    if (!t) return null;
+    const d = el("div", "st-mynote-b ro"); d.append(el("p", "kicker", "Your note"), el("p", "st-mynote-t", t));
+    return d;
+  }
+
+  /* ---------- search: every course, and your notes ---------- */
+  // British and American spellings fold together, and words match by their stem ("network effects"
+  // finds "network effect"): the same rules as the slide search on the Slides tab.
+  const fold = (t) => String(t || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/is(e|ed|es|ing|ation|ations)\b/g, "iz$1");
+  const stem = (w) => {
+    if (w.length < 5) return w;
+    let t = w.replace(/(ations?|ating|ated|ates|ingly|ings?|ions?|ants?|ences?|ances?|ments?|ers?|ed|ies|es|s)$/, "");
+    if (t.length < 4) t = w.replace(/s$/, "");
+    return t.length > 4 ? t.replace(/e$/, "") : t;
+  };
+  const termsOf = (q) => [...new Set(fold(q).split(/\s+/).map((t) => t.replace(/^[^\p{L}\p{N}€$£]+|[^\p{L}\p{N}%]+$/gu, "")).filter((t) => t.length > 1).map(stem))];
+  const KINDS = { note: "Your note", topic: "Topic", framework: "Framework", prompt: "Open question", story: "Story", mcq: "Question" };
+  const WEIGHT = { note: 5, topic: 4, framework: 3.5, prompt: 2.5, story: 2, mcq: 1 };
+  const plainOf = (h) => (h ? new DOMParser().parseFromString(String(h), "text/html").body.textContent.replace(/\s+/g, " ").trim() : "");
+  const unbold = (t) => String(t || "").replace(/\*\*/g, "");
+  // everything in a course you can find, each with its address (built once per course)
+  function searchIndex(id) {
+    if (T.idx.has(id)) return T.idx.get(id);
+    const pk = T.packs.get(id), out = [], at = {}, home = "#/study/" + id;
+    const add = (e) => {
+      e.course = id; e.pk = pk;
+      e.body = e.parts.filter(Boolean).map(unbold).join(" · ");
+      e.ft = fold(e.title); e.fb = fold(e.body);
+      out.push(e);
+    };
+    pk.nums.forEach((n) => {
+      const c = pk.classes[n], here = home + "/c" + n;
+      add({ kind: "story", n, title: c.name, href: here, parts: [c.line, ...(c.story || [])] });
+      c.cards.forEach((k, i) => {
+        at[k.id] = here + "/t/" + (i + 1);
+        const x = k.x || {};
+        add({ kind: "topic", id: k.id, n, title: k.title, href: at[k.id], parts: [x.plain, x.hotel, x.mixup, x.ask?.q, x.ask?.a, plainOf(k.html)] });
+      });
+      c.likely.forEach((q, i) => add({ kind: "prompt", id: q.id, n, title: plainOf(q.ask).replace(/^[“"]+|[”"]+$/g, ""), href: here + "/explain/" + (i + 1),
+        parts: [q.answer?.case, ...(q.answer?.points || []), q.answer?.conclusion, plainOf(q.html)] }));
+      c.drill.forEach((q) => { if (q.classes[0] === n) add({ kind: "mcq", id: q.id, n, title: q.concept || q.stem, q, parts: [q.stem, ...q.options, q.why] }); });
+    });
+    const links = Object.fromEntries(pk.items.filter((it) => it.kind === "framework").map((it) => [it.id, it.links || []]));
+    pk.frameworks.forEach((f) => {
+      // a framework has no page of its own: it opens the topic that explains it, or its class
+      const href = at[links[f.id]?.[0]] || (f.c && pk.classes[f.c] ? home + "/c" + f.c : home + "/cards");
+      add({ kind: "framework", id: f.id, n: pk.classes[f.c] ? f.c : 0, title: f.name, href, parts: [f.gist, refOf(f, pk).text || f.ref] });
+    });
+    const v = { list: out, byId: Object.fromEntries(out.filter((e) => e.id).map((e) => [e.id, e])) };
+    T.idx.set(id, v);
+    return v;
+  }
+  // your notes in a course, as search entries (they change as you write, so never cached)
+  function noteEntries(id) {
+    const ix = searchIndex(id);
+    return Mem.notes(id).map((nt) => {
+      const on = ix.byId[nt.id];
+      const e = { kind: "note", id: nt.id, n: on?.n || 0, course: id, pk: T.packs.get(id), t: nt.t,
+        title: on ? on.title : "A note on something no longer in the course", href: on?.href || null, body: nt.text };
+      e.ft = fold(e.title); e.fb = fold(e.body);
+      return e;
+    });
+  }
+  function search(q, ids) {
+    const terms = termsOf(q), hits = [];
+    if (!terms.length) return { terms, hits };
+    ids.forEach((id) => [...noteEntries(id), ...searchIndex(id).list].forEach((e) => {
+      if (!terms.every((t) => e.ft.includes(t) || e.fb.includes(t))) return;
+      const inTitle = terms.filter((t) => e.ft.includes(t)).length;
+      hits.push({ e, score: WEIGHT[e.kind] + 3 * inTitle + (inTitle === terms.length ? 2 : 0) });
+    }));
+    hits.sort((a, b) => b.score - a.score);
+    return { terms, hits: hits.map((h) => h.e) };
+  }
+  function marked(node, text, terms) {
+    const pat = terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/iz/g, "i[sz]"));
+    String(text).split(new RegExp("(" + pat.map((x) => x + "\\p{L}*").join("|") + ")", "igu")).forEach((part, i) => node.append(i % 2 ? el("mark", null, part) : document.createTextNode(part)));
+    return node;
+  }
+  function snippetOf(e, terms) {
+    let i = -1;
+    for (const t of terms) { const k = e.fb.indexOf(t); if (k >= 0 && (i < 0 || k < i)) i = k; }
+    if (i < 0) return e.body.length > 170 ? e.body.slice(0, 170).trim() + "…" : e.body;
+    const a = Math.max(0, i - 60), b = Math.min(e.body.length, i + 150);
+    return (a > 0 ? "…" : "") + e.body.slice(a, b).trim() + (b < e.body.length ? "…" : "");
+  }
+  function hitRow(e, terms) {
+    const r = el(e.href || e.q ? "a" : "div", "qr st-hit");
+    if (e.href) r.href = e.href;
+    else if (e.q) { r.href = "#"; r.addEventListener("click", (ev) => { ev.preventDefault(); flushNote(); K().startDrill([e.q], "study/" + e.course + "/c" + e.n + "/check"); }); }
+    const w = el("span", "where", KINDS[e.kind]);
+    w.style.setProperty("--x", e.kind === "note" ? "var(--gold)" : e.n ? color(e.n, e.pk) : "var(--accent)");
+    const s = el("span", "s"), sn = el("span", "sn");
+    if (e.n && e.pk?.classes[e.n]) sn.append(el("b", null, unitShort(e.pk) + e.n + " · "));
+    s.append(marked(el("span", "cn"), e.title, terms), marked(sn, snippetOf(e, terms), terms));
+    r.append(w, s);
+    if (e.href || e.q) r.append(K().icon("next"));
+    return r;
+  }
+  // The search box, on the Study home (every course) and on a course's home (that course). Typing
+  // shows the matches in place of the page below it; with nothing typed you can list your notes.
+  function findBox(w, ids, page) {
+    if (T.find.key !== ids.join()) T.find = { key: ids.join(), q: "", notes: false };
+    const F = T.find, many = ids.length > 1;
+    const sb = el("div", "searchbox st-search"), input = el("input");
+    input.type = "search"; input.value = F.q; input.autocomplete = "off";
+    input.placeholder = many ? "Search every course: a framework, a hotel, an idea…" : "Search " + (T.meta?.code || "this course") + ": a framework, a hotel, an idea…";
+    input.setAttribute("aria-label", many ? "Search every course and your notes" : "Search this course and your notes");
+    sb.append(K().icon("search"), input);
+    const line = el("p", "small st-findline"), area = el("div", "st-found");
+    w.append(sb, line, area, page);
+    const counts = () => ids.map((id) => [id, Mem.notes(id).length]).filter((x) => x[1]);
+    let seq = 0;
+    const draw = async () => {
+      const q = F.q.trim(), mine = counts(), total = mine.reduce((a, x) => a + x[1], 0), my = ++seq;
+      line.textContent = "";
+      if (!q && total) line.append(document.createTextNode(plural(total, "note") + " of your own" + (many && mine.length > 1 ? ", in " + mine.length + " courses" : "") + ". "),
+        K().textBtn(F.notes ? "Hide them" : "Show them", () => { F.notes = !F.notes; draw(); }));
+      else if (!q) line.append(document.createTextNode("Finds topics, frameworks, questions and stories in " + (many ? "every course" : "this course") + ". Write a note of your own on any topic, and it finds that too."));
+      page.hidden = !!q || (F.notes && !!total);
+      area.textContent = "";
+      if (!q && !(F.notes && total)) return;
+      const need = q ? ids : mine.map((x) => x[0]);
+      if (need.some((id) => !T.packs.has(id))) {
+        area.append(el("p", "loading", "Searching…"));
+        try { await Promise.all(need.map(pack)); } catch (e) { area.textContent = ""; area.append(el("p", "small", "The search can't open the courses right now. Check your connection.")); return; }
+        if (my !== seq) return;
+        area.textContent = "";
+      }
+      const { terms, hits } = q ? search(q, ids) : { terms: [], hits: need.flatMap(noteEntries).sort((a, b) => b.t - a.t) };
+      if (q) area.append(el("p", "small st-found-n", hits.length ? plural(hits.length, "match", "matches") + " for “" + q + "”"
+        : "Nothing found for “" + q + "”. Try fewer or shorter words, or another spelling."));
+      // the course with the best match first
+      (q ? [...new Set(hits.map((e) => e.course))] : need).forEach((id) => {
+        const mine2 = hits.filter((e) => e.course === id);
+        if (!mine2.length) return;
+        const sec = el("section", "sect"), meta = T.cat.find((c) => c.id === id);
+        if (need.length > 1 || !q) sec.append(K().h2(q ? [meta?.code, meta?.name].filter(Boolean).join(" · ") : "Your notes" + (many ? " · " + (meta?.code || meta?.name) : ""), plural(mine2.length, q ? "match" : "note", q ? "matches" : "notes")));
+        const list = el("div", "panel results st-results");
+        mine2.slice(0, 40).forEach((e) => list.append(hitRow(e, terms)));
+        if (mine2.length > 40) list.append(el("p", "small st-more", (mine2.length - 40) + " more: add a word to narrow it down."));
+        sec.append(list); area.append(sec);
+      });
+    };
+    let tm = null;
+    input.addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(() => { F.q = input.value; draw(); }, 120); });
+    input.addEventListener("keydown", (e) => { if (e.key === "Escape" && input.value) { e.preventDefault(); input.value = F.q = ""; draw(); } });
+    T.keys = (e) => { if (e.key === "/") input.focus(); else return false; };
+    draw();
+    return input;
+  }
+
   /* ---------- render ---------- */
   async function render(box, seg) {
+    flushNote();
     T.keys = null;
     // addresses from before there were several courses (#/study/c4/…, #/study/cards) are LDD's
     if (/^(c\d+|cards)$/.test(seg[0] || "")) { seg = ["ldd", ...seg]; history.replaceState(null, "", "#/study/" + seg.join("/")); }
@@ -224,18 +408,20 @@ const Study = (() => {
     hero.append(el("p", "kicker", "Study"), el("h1", null, "What do you want to learn?"),
       el("p", "lede", "Every course of the Master, built from the lecturers' material, what was said in class and research we checked ourselves. Pick a course and take it class by class. What you know is remembered per course, and the app shows you what's starting to fade."));
     w.append(hero);
-    todayCard(w);
-    const last = continueBox(w);
+    const page = el("div", "st-page");
+    findBox(w, T.cat.filter((c) => c.status === "ready").map((c) => c.id), page);
+    todayCard(page);
+    const last = continueBox(page);
     if (last) pack(last.course.id).catch(() => {});   // likely your next click: open it in the background
     [...new Set(T.cat.map((c) => c.block))].forEach((b) => {
       const s = el("section", "sect");
       s.append(K().h2((b.includes("–") ? "Blocks " : "Block ") + b));
       const grid = el("div", "st-grid st-courses");
       T.cat.filter((c) => c.block === b).forEach((c) => grid.append(courseTile(c)));
-      s.append(grid); w.append(s);
+      s.append(grid); page.append(s);
     });
-    syncLine(w);
-    if (runOff()) { const p = el("p", "small"); p.append(document.createTextNode("Your run is hidden. "), K().textBtn("Show it again", () => { store.set("study:run:off", false); K().render(); })); w.append(p); }
+    syncLine(page);
+    if (runOff()) { const p = el("p", "small"); p.append(document.createTextNode("Your run is hidden. "), K().textBtn("Show it again", () => { store.set("study:run:off", false); K().render(); })); page.append(p); }
   }
   function courseTile(c) {
     const ready = c.status === "ready";
@@ -270,6 +456,9 @@ const Study = (() => {
       el("p", "lede", "Start a " + unit().toLowerCase() + " with its story. Then take its topics one at a time: the idea in plain words, a hotel example, the usual mix-up, and where to look it up" + (slides() ? " in the slides and the book" : "") + ". Then answer its open questions in your own words, and check yourself with a few quick questions."));
     if (crs.note) hero.append(el("p", "small st-note", crs.note));   // e.g. which workshops are in so far
     w.append(hero);
+    const page = el("div", "st-page");
+    findBox(w, [T.course], page);
+    w = page;
     continueBox(w, T.course);
     const s1 = el("section", "sect");
     s1.append(K().h2(unitsOf(unit()).replace(/^./, (x) => x.toUpperCase()), "story → topics → explain → check"));
@@ -321,7 +510,7 @@ const Study = (() => {
     refreshSteps = () => { const cs = counts(); smalls.forEach((sm, j) => (sm.textContent = cs[j])); };
     head.append(nav); w.append(head);
     if (step === "t") renderTopic(w, n, rest[1]);
-    else if (step === "explain") renderExplain(w, n);
+    else if (step === "explain") renderExplain(w, n, rest[1]);
     else if (step === "check") renderCheck(w, n);
     else renderStory(w, n);
   }
@@ -347,7 +536,9 @@ const Study = (() => {
     const list = el("div", "panel st-trows");
     c.cards.forEach((k, i) => {
       const a = el("a", "st-trow"); a.href = cls(n) + "/t/" + (i + 1);
-      a.append(el("span", "n", String(i + 1)), el("span", "t", k.title),
+      const t = el("span", "t", k.title);
+      if (Mem.note(C(), k.id).trim()) { const ic = K().icon("pen"); ic.classList.add("st-noted"); ic.setAttribute("aria-label", "You have a note here"); ic.removeAttribute("aria-hidden"); t.append(ic); }
+      a.append(el("span", "n", String(i + 1)), t,
         r[i] === 1 ? el("span", "st-state ok", "Can explain") : r[i] === 0 ? el("span", "st-state no", "Not yet") : el("span"));
       list.append(a);
     });
@@ -389,9 +580,10 @@ const Study = (() => {
       const refs = sources(x.refs);
       if (refs) art.append(refs);
     }
+    art.append(noteBox(C(), card.id));
     if (card.html) {
       const nd = el("details", "st-notes"); nd.open = !x || !!store.get("study:notesOpen");
-      const sum = el("summary"); sum.append(document.createTextNode("Your notes for this topic"), el("small", null, notesPages(c)));
+      const sum = el("summary"); sum.append(document.createTextNode("Our notes for this topic"), el("small", null, notesPages(c)));
       nd.append(sum, notesDoc(card.html, n));
       if (x) nd.addEventListener("toggle", () => store.set("study:notesOpen", nd.open));
       art.append(nd);
@@ -437,7 +629,7 @@ const Study = (() => {
     d.append(btns); w.append(d);
   }
 
-  function renderExplain(w, n) {
+  function renderExplain(w, n, which) {
     const c = T.data.classes[n], how3 = T.data.course.notes?.howTo;
     w.append(el("p", "small st-intro", "Answer each question in your own words first, before you look: a few bullets and an example. Then open the key points, tick the ones your answer covered, and mark yourself honestly."
       + (how3 && c.notesPages ? " In an exam this is your route: the question type on p. " + how3 + ", the class's likely questions on p. " + c.notesPages[1] + ", evidence from the case, then the p. " + how3 + " recipe." : "")));
@@ -452,7 +644,7 @@ const Study = (() => {
       let tm = null;
       ta.addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(() => save((s) => (s.text = ta.value)), 300); });
       const how = el("div", "st-how"); how.hidden = !st.shown;
-      how.append(el("p", "kicker", ["How your notes answer it", notesPages(c, "last")].filter(Boolean).join(" · ")), notesDoc(q.html, n));
+      how.append(el("p", "kicker", ["How our notes answer it", notesPages(c, "last")].filter(Boolean).join(" · ")), notesDoc(q.html, n));
       // the key points of one good answer (on an example, when the question has one); you tick the
       // ones your answer covered and the app suggests a mark from them. No exam format assumed.
       const x = q.answer, ans = el("div", "st-ans"), ticks = new Set(st.ticks || []); ans.hidden = !(x && st.answer);
@@ -504,6 +696,7 @@ const Study = (() => {
       }
       card.append(el("p", "kicker", "Question " + (i + 1) + " of " + c.likely.length), ask, ta, btns, how, ans, marks);
       w.append(card);
+      if (+which === i + 1) { card.classList.add("st-here"); requestAnimationFrame(() => card.scrollIntoView({ block: "start" })); }
     });
     const nav = el("div", "st-nav");
     nav.append(link("Topics", cls(n) + "/t", "ghost small", "back"), link("Go to Check", cls(n) + "/check", "primary", "arrow", true));
@@ -592,6 +785,7 @@ const Study = (() => {
         if (line) backSide.append(line);
         if (f.c) backSide.append(el("p", "small", unit() + " " + f.c + ": " + T.data.classes[f.c].name));
       } else backSide.append(el("p", "small", r.text));
+      backSide.append(noteBox(C(), f.id));
       const row = el("div", "btns");
       const tb = K().button("Turn the card", "primary", () => turn()), again = K().button("Again", "", () => answer(false)), knew = K().button("Knew it", "primary", () => answer(true), "check");
       again.hidden = knew.hidden = true;
@@ -751,7 +945,7 @@ const Study = (() => {
     const stage = el("div", "td-stage");
     w.append(head, stage);
     const show = () => {
-      T.keys = null; stage.textContent = "";
+      flushNote(); T.keys = null; stage.textContent = "";
       const n = s.steps.length;
       fill.style.width = pct(Math.min(s.i, n), n) + "%";
       count.textContent = s.i < n ? s.i + 1 + " / " + n : n + " / " + n;
@@ -832,10 +1026,11 @@ const Study = (() => {
         const refs = K().sourcesLine(x?.refs || it.refs, links); if (refs) a.append(refs);
         if (x && it.notes) {
           const nd = el("details", "st-notes"), sum = el("summary");
-          sum.append(document.createTextNode("Your notes for this topic"));
+          sum.append(document.createTextNode("Our notes for this topic"));
           nd.append(sum, notesDoc(it.notes, n, links)); a.append(nd);
         }
       } else a.append(el("p", "td-gist", it.gist), whereLine(pk, it));
+      a.append(noteBox(st.course, it.id));
       const go = K().button("Continue", "primary", () => { grade(null); next(); }, "arrow", true);
       foot.append(el("p", "hint", it.kind === "topic" ? "You'll explain it in a moment." : "You'll meet it again in a moment."), go);
       a.append(foot);
@@ -853,6 +1048,7 @@ const Study = (() => {
         if (x) back.append(rich("p", null, x.ask.a)); else if (it.notes) back.append(notesDoc(it.notes, n, links));
         const refs = K().sourcesLine(x?.refs || it.refs, links); if (refs) back.append(refs);
       }
+      const mine = noteShow(st.course, it.id); if (mine) back.append(mine);
       const rate = gradeRow((g) => { grade(g); next(); }); rate.hidden = true;
       const ask = el("p", "td-rate", "How did you do?"); ask.hidden = true;
       let open = false;
@@ -983,6 +1179,9 @@ const Study = (() => {
     if (e.key === " " && (tag === "BUTTON" || tag === "A" || tag === "SUMMARY")) return;
     if (T.keys(e) !== false) e.preventDefault();
   });
+  // a note half typed is saved when you leave the page or switch apps
+  window.addEventListener("pagehide", flushNote);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushNote(); });
   // progress arrived from another device: show it, unless you're typing or halfway through a deck
   window.addEventListener("mem-changed", () => {
     if (S.tab !== "study" || !T.cat || /\/(cards|today)$/.test(location.hash)) return;
