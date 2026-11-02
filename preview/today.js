@@ -11,7 +11,7 @@ const Today = (() => {
   const DAY_MIN = 5;                    // cards that make a study day
   const FADING = 0.9;                   // recall under this is due again
   // rough seconds per card, to fill the minutes you chose
-  const COST = { learn: 70, say: 35, learnFw: 20, flash: 15, pick: 20, where: 15, mcq: 45 };
+  const COST = { learn: 110, say: 35, learnFw: 20, flash: 15, pick: 20, where: 15, mcq: 45 };   // learn: a topic's parts, gaps, scene and mix-up
   const STOP = new Set(["and", "the", "for", "with", "from", "into", "about", "your", "what", "vs"]);
   const now = () => Math.floor(Date.now() / 1000);
   const shuffle = (a) => a.map((x) => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);

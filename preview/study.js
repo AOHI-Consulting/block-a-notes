@@ -903,11 +903,17 @@ const Study = (() => {
       w.append(d); return;
     }
     const before = Today.run(Mem.days(), Mem.today()).today, many = list.length > 1;
-    const steps = p.steps.map((st) => ({
-      type: st.kind, course: st.course, pk: st.pack, it: st.it, items: [{ course: st.course, id: st.it.id }],
-      why: st.why, r: st.r, pick: st.pick, where: st.where, showCourse: many,
-      retryable: st.kind === "mcq" || st.kind === "learn" ? false : undefined,
-    }));
+    // a new topic is taught in small steps, as on the path; a fading one comes back from one of three sides
+    const steps = p.steps.flatMap((st) => {
+      const tag = (x, why) => ({ ...x, why, r: st.r, showCourse: many });
+      if (st.it.kind === "topic" && st.kind === "learn") return Path.teachSteps(st.course, st.pack, st.it).map((x, i) => tag(x, i ? null : st.why));
+      if (st.it.kind === "topic" && st.kind === "say" && st.why === "fading") return [tag(Path.topicCheck(st.course, st.pack, st.it), st.why)];
+      return [{
+        type: st.kind, course: st.course, pk: st.pack, it: st.it, items: [{ course: st.course, id: st.it.id }],
+        why: st.why, r: st.r, pick: st.pick, where: st.where, showCourse: many,
+        retryable: st.kind === "mcq" || st.kind === "learn" ? false : undefined,
+      }];
+    });
     Lesson.play(w, {
       color: "var(--accent)", steps, icon: "bolt", title: "Today's session done!",
       end(box, res) {

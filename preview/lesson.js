@@ -2,8 +2,10 @@
    full screen: you answer, press Check (or Enter), and a bar slides up saying whether you were right,
    with why and where to look. What you missed comes back once at the end. No hearts and no timer: a
    wrong answer costs nothing but a second look.
-   Exercises: learn (a new topic or framework), cloze (tap the key terms into the gaps of a sentence),
-   mcq, pick (which framework is this?), where (which class?), type (name the framework), match (pairs),
+   Exercises: learn (a new framework, or a topic all at once), read (a topic a part at a time: its plain
+   words, then its mix-up), cloze (tap the key terms into the gaps of a sentence), scene (which idea is
+   at work in this hotel?), mcq, pick (which framework is this?), where (which class?), type (name the
+   framework), match (pairs),
    say (explain it, then mark yourself), flash, story (a class's story with questions in it), explain
    (an open question: write, tick the key points you covered, mark yourself) and note (a message).
    Every answer is a review for Mem, so the path, the daily session and the class pages share one memory.
@@ -285,6 +287,48 @@ const Lesson = (() => {
       } else a.append(el("p", "ls-gist", it.gist), SK().whereLine(pk, it), SK().noteBox(ex.course, it.id));
       footContinue("Continue", () => { Mem.tick(); R.log.push({ ex, g: null }); next(); }, it.kind === "topic" ? "You'll use it in a moment." : "");
       return { el: a };
+    },
+
+    // a topic in small steps: a part of its plain words (the title on the first), or its mix-up, which
+    // closes the topic with where to look it up, your own note and ours
+    read(ex) {
+      const it = ex.it, pk = ex.pk, x = it.x || {}, links = !!pk.course.slides, a = card("ls-read " + ex.part);
+      const label = ex.part === "plain" ? (ex.k ? "New topic · " + (ex.k + 1) + " of " + ex.n : "New topic") : ex.part === "hotel" ? "In practice" : ex.part === "mixup" ? "Watch out" : "New topic";
+      a.append(kick(ex, label));
+      if (ex.part === "plain" && !ex.k) a.append(el("h2", "ls-title", it.title));
+      else a.append(el("p", "ls-sub ls-topic", it.title));
+      if (ex.part === "plain") {
+        if (ex.n > 1) { const d = el("div", "ls-dots"); for (let i = 0; i < ex.n; i++) d.append(el("i", i <= ex.k ? "on" : null)); a.append(d); }
+        a.append(rich("p", "ls-text", ex.text));
+      } else if (ex.part === "hotel") a.append(SK().sec("hotel", "Picture it in a hotel", "", ex.text));
+      else if (ex.part === "mixup") a.append(SK().sec("mix", "Easy to mix up", "", ex.text));
+      if (ex.last) {
+        const refs = K().sourcesLine(x.refs || it.refs, links); if (refs) a.append(refs);
+        a.append(SK().noteBox(ex.course, it.id));
+        if (it.notes) {
+          const nd = el("details", "st-notes"), sum = el("summary");
+          sum.append(document.createTextNode("Our notes for this topic"));
+          nd.append(sum, SK().notesDoc(it.notes, it.class, links)); a.append(nd);
+        }
+      }
+      footContinue("Continue", () => { if (ex.tick) Mem.tick(); R.log.push({ ex, g: null }); next(); }, ex.part === "plain" && ex.k === 0 ? "A few lines at a time." : "");
+      return { el: a };
+    },
+
+    // a hotel scene: which idea is at work here?
+    scene(ex) {
+      const it = ex.it, a = card("ls-scene"), box = el("div", "st-sec hotel ls-scenebox"), p = el("p");
+      box.append(el("h3", null, "Picture it in a hotel"), p);
+      ex.cue.forEach((x) => p.append(x === null ? el("span", "ls-blank") : document.createTextNode(x)));
+      if (ex.more) p.append(document.createTextNode(" …"));
+      a.append(kick(ex, "Spot the idea"), el("h2", "ls-q", "Which idea is at work in this hotel?"), box);
+      return choose(a, ex, ex.options, false, ex.answer, (ok) => {
+        // the whole scene, names and all
+        p.replaceWith(el("p", "ls-in", ex.hotel));
+        const b = el("div", "ls-fbody");
+        b.append(el("p", "ls-fbl", (ok ? "Yes: " : "It's ") + it.title + "."));
+        return b;
+      });
     },
 
     // tap the key terms into the gaps of a sentence from the topic
