@@ -331,14 +331,20 @@ const Lesson = (() => {
       });
     },
 
-    // tap the key terms into the gaps of a sentence from the topic
+    // tap the key terms into the gaps of a sentence from the topic. The highlighted gap takes the next
+    // word; tap another gap to fill that one first, or a filled one to take its word out.
     cloze(ex) {
-      const a = card("ls-clozecard");
+      const a = card("ls-clozecard"), many = ex.answers.length > 1;
       a.append(kick(ex, "Fill in the gaps"), el("h2", "ls-q", "Tap the words that complete it."), el("p", "ls-sub", ex.it.title));
       const line = el("p", "ls-cloze"), slots = [];
-      ex.parts.forEach((p) => {
+      // gaps joined only by "and", "or" or a comma are a list: either order is right
+      const JOIN = /^\s*(?:,|,?\s*(?:and|or|&)|\/)\s*$/i, group = [];
+      let g = -1;
+      ex.parts.forEach((p, i) => {
         if (typeof p === "string") { line.append(...rich("span", null, p).childNodes); return; }
-        const s = el("button", "ls-slot"); s.type = "button"; s.setAttribute("aria-label", "Gap " + (p.k + 1) + ", empty");
+        if (!(typeof ex.parts[i - 1] === "string" && JOIN.test(ex.parts[i - 1]) && typeof ex.parts[i - 2] === "object")) g++;
+        group[p.k] = g;
+        const s = el("button", "ls-slot"); s.type = "button";
         slots.push({ el: s, k: p.k, tile: null });
         line.append(s);
       });
@@ -348,16 +354,28 @@ const Lesson = (() => {
         bank.append(t);
         return { el: t, w, used: false };
       });
-      let locked = false;
+      let locked = false, cur = slots[0] || null;   // the gap the next word goes into
       const ready = footCheck(check, skip);
-      const refresh = () => ready(slots.every((s) => s.tile));
+      function refresh() {
+        if (cur?.tile) cur = null;
+        if (!cur && !locked) cur = slots.find((x) => !x.tile) || null;
+        slots.forEach((s) => {
+          s.el.classList.toggle("next", !locked && s === cur);
+          s.el.setAttribute("aria-label", "Gap " + (s.k + 1) + (s.tile ? ": " + s.tile.w + ". Tap to take it out"
+            : s === cur ? ", empty. The next word goes here" : ", empty. Tap to put the next word here"));
+        });
+        ready(slots.every((s) => s.tile));
+      }
       function put(t) {
         if (locked || t.used) return;
-        const s = slots.find((x) => !x.tile); if (!s) return;
+        const s = cur && !cur.tile ? cur : slots.find((x) => !x.tile); if (!s) return;
         t.used = true; s.tile = t;
-        s.el.textContent = t.w; s.el.classList.add("filled"); s.el.setAttribute("aria-label", "Gap " + (s.k + 1) + ": " + t.w + ". Tap to take it out");
+        s.el.textContent = t.w; s.el.classList.add("filled");
         fly(t.el, s.el);
         t.el.classList.add("used"); t.el.setAttribute("aria-hidden", "true"); t.el.tabIndex = -1;
+        // then the next empty gap after this one (or before it, if this was the last)
+        const i = slots.indexOf(s);
+        cur = slots.slice(i + 1).find((x) => !x.tile) || slots.find((x) => !x.tile) || null;
         tone("tap"); refresh();
         if (document.activeElement === t.el) (tiles.find((x) => !x.used)?.el || R.primary)?.focus({ preventScroll: true });
       }
@@ -366,28 +384,50 @@ const Lesson = (() => {
         const t = s.tile; s.tile = null;
         t.used = false; t.el.classList.remove("used"); t.el.removeAttribute("aria-hidden"); t.el.tabIndex = 0;
         fly(s.el, t.el);
-        s.el.textContent = ""; s.el.classList.remove("filled"); s.el.setAttribute("aria-label", "Gap " + (s.k + 1) + ", empty");
+        s.el.textContent = ""; s.el.classList.remove("filled");
+        cur = s;
         tone("tap"); refresh();
       }
       tiles.forEach((t) => t.el.addEventListener("click", () => put(t)));
-      slots.forEach((s) => s.el.addEventListener("click", () => back(s)));
+      slots.forEach((s) => s.el.addEventListener("click", () => {
+        if (locked) return;
+        if (s.tile) back(s); else { cur = s; refresh(); }
+      }));
+      refresh();
       const answer = () => { const p = el("div", "ls-fbody"); p.append(el("p", "ls-fbl", "The full sentence"), rich("p", "ls-fbx", ex.full)); return p; };
+      // a gap is right with its own word, or with any word of its list when the list holds just its words
+      const bag = (xs) => xs.map(norm).sort().join("|");
+      function good(s) {
+        if (norm(s.tile?.w) === norm(ex.answers[s.k])) return true;
+        const same = slots.filter((x) => group[x.k] === group[s.k]);
+        return same.length > 1 && bag(same.map((x) => x.tile?.w)) === bag(same.map((x) => ex.answers[x.k]));
+      }
       function check() {
-        locked = true;
+        if (locked) return; locked = true; refresh();
         let ok = true;
-        slots.forEach((s) => { const good = norm(s.tile?.w) === norm(ex.answers[s.k]); s.el.classList.add(good ? "right" : "wrong"); if (!good) ok = false; });
+        slots.forEach((s) => {
+          if (good(s)) { s.el.classList.add("right"); return; }
+          ok = false;
+          // the word you put, struck out, and the right one beside it
+          s.el.textContent = ""; s.el.classList.add("wrong");
+          s.el.append(el("del", null, s.tile.w), el("ins", null, ex.answers[s.k]));
+          s.el.setAttribute("aria-label", "Gap " + (s.k + 1) + ": you put " + s.tile.w + "; it's " + ex.answers[s.k]);
+        });
         bank.classList.add("done");
         grade(ex, ok ? 3 : 1);
-        feedback(ok, ok ? null : answer());
+        // all the right words, only in the wrong gaps: say so, so it doesn't look like the same answer
+        const swapped = !ok && many && bag(slots.map((s) => s.tile.w)) === bag(ex.answers);
+        feedback(ok, ok ? null : answer(), swapped ? "Right words, wrong gaps" : undefined);
       }
       function skip() {
-        locked = true;
+        if (locked) return; locked = true; refresh();
         slots.forEach((s) => { s.el.textContent = ex.answers[s.k]; s.el.classList.add("filled", "shown"); });
         bank.classList.add("done");
         grade(ex, 1);
         feedback(false, answer(), "Here's how it goes");
       }
       a.append(line, bank);
+      if (many) a.append(el("p", "ls-clozehint", "Tap a gap to choose where the next word goes."));
       return {
         el: a, focus: tiles[0]?.el,
         key(e) {
