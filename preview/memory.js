@@ -88,6 +88,8 @@ const Mem = (() => {
   const pathKey = (course) => "mem:path-" + course;
   const flagged = (course, key) => !!load(pathKey(course)).items[key]?.v;
   const flagAt = (course, key) => { const x = load(pathKey(course)).items[key]; return x?.v ? x.t : null; };   // when it was marked (seconds)
+  // the marks whose key starts with prefix, set between t0 and t1 (seconds)
+  const flagsBetween = (course, prefix, t0, t1) => Object.entries(load(pathKey(course)).items).filter(([k, x]) => k.startsWith(prefix) && x?.v && x.t >= t0 && x.t < t1).map(([k]) => k);
   function flag(course, key, t = now()) {
     const k = pathKey(course), b = load(k), old = b.items[key];
     b.items[key] = { v: 1, t: Math.max(t, (old?.t || 0) + 1e-3), n: (old?.n || 0) + 1 };
@@ -218,7 +220,7 @@ const Mem = (() => {
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync(); else if (sy.timer) sync(); });
 
   return { grade, tick, get, last, recall, seed, summary, sync, status, today, days: () => load("mem:days").days,
-           note, setNote, notes, NOTE_MAX, flag, flagged, flagAt, slip, apart, mixups, mixOf, MIX_AT, APART,
+           note, setNote, notes, NOTE_MAX, flag, flagged, flagAt, flagsBetween, slip, apart, mixups, mixOf, MIX_AT, APART,
            caseGet, caseSet, caseAll, CASE_MAX, _next: next, _merge: merge };
 })();
 

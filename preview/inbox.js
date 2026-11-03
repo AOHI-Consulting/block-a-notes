@@ -7,7 +7,12 @@
    after you've replied to (or set aside) the last, and only once you've learnt the rooms it needs.
    Nothing expires; a set-aside message can still be answered later. Marks on the path (mem:path-<course>,
    synced): gm:<id> when it arrived, gmdone:<id> once replied or set aside. Your reply is in the case
-   notebook (mem:case) as gm:<id>. The player steps (mail, rooms, reply) are drawn by lesson.js. */
+   notebook (mem:case) as gm:<id>. The player steps (mail, rooms, reply) are drawn by lesson.js.
+
+   Applying is remembering: when you send a reply, each room you picked that helps gets a review (good
+   if your reply covered at least half the key points, hard otherwise), so a good reply brightens its
+   windows and can earn their keys. A room you missed isn't marked down. The GM remembers your last
+   advice and says so at the top of the next message. */
 
 const Inbox = (() => {
   const K = () => Practise.kit, SK = () => Study.kit;
@@ -28,9 +33,10 @@ const Inbox = (() => {
   }
 
   // the message waiting in a course (one at most); delivers the next one when it's due
+  const off = () => !!store.get("study:gm:off");   // turned off in More: nothing arrives or shows outside the inbox
   function deliver(c, pk, t = now()) {
     const ms = msgsOf(pk);
-    if (!ms.length) return null;
+    if (!ms.length || off()) return null;
     const open = ms.find((m) => arrivedAt(c, m.id) && !doneAt(c, m.id));
     if (open) return open;
     const last = Math.max(0, ...ms.map((m) => doneAt(c, m.id) || 0));
@@ -63,10 +69,19 @@ const Inbox = (() => {
     const at = arrivedAt(c, m.id); if (at) head.append(el("small", null, when(at)));
     box.append(head, el("h2", "gm-subj", m.title));
     const body = el("div", "gm-body");
+    const prev = before(c, pk, m);
+    if (prev) body.append(el("p", "gm-thanks", "Thanks again for your advice on “" + prev.title + "”. " + (prev.done ? "It worked." : "We're trying it now.")));
     fill(m.body, c).split(/\n\n+/).forEach((p) => body.append(SK().rich("p", null, p)));
     body.append(el("p", "gm-sign", "— The GM"));
     box.append(body);
     return box;
+  }
+  // the last message before this one that you replied to (done: it's been more than two weeks)
+  function before(c, pk, m) {
+    const at = arrivedAt(c, m.id); if (!at) return null;
+    const prev = msgsOf(pk).filter((x) => x !== m && replyOf(c, x.id)?.sent && (arrivedAt(c, x.id) || 0) < at)
+      .sort((a, b) => arrivedAt(c, b.id) - arrivedAt(c, a.id))[0];
+    return prev ? { title: prev.title, done: at - (doneAt(c, prev.id) || at) > 14 * 86400 } : null;
   }
   // the GM's answer, once you've replied
   function answer(c, m) {
@@ -87,7 +102,7 @@ const Inbox = (() => {
     return Lesson.shuffle([...m.rooms, ...others.map((it) => it.id)]);
   }
   function steps(c, pk, m) {
-    const base = { course: c, pk, gm: m, items: [], retryable: false, hideClass: true };
+    const base = { course: c, pk, gm: m, items: [], retryable: false, hideClass: true, gmState: { picked: [] } };
     return [
       { ...base, type: "mail" },
       { ...base, type: "rooms", options: roomOptions(c, pk, m) },
@@ -100,9 +115,11 @@ const Inbox = (() => {
     if (!m || !arrivedAt(course, m.id)) { location.replace(back); return; }
     Lesson.play(w, {
       color: "var(--accent)", steps: steps(course, pk, m), crab: "done", title: "Reply sent!",
-      end(box) {
+      end(box, res) {
         if (!doneAt(course, m.id)) Mem.flag(course, "gmdone:" + m.id);
         const a = answer(course, m); if (a) box.append(a);
+        const lit = res.log.find((l) => l.gmLit)?.gmLit || [];
+        if (lit.length) box.append(el("p", "ls-runnote", (lit.length === 1 ? "Room " : "Rooms ") + lit.map((id) => Path.roomOf(pk, id)?.no).filter(Boolean).join(" and ") + (lit.length === 1 ? " is" : " are") + " brighter: applying an idea counts as remembering it."));
         box.append(el("p", "ls-runnote", "Your reply is in your case notebook. " + nextLine(course, pk)));
       },
       done() { location.replace(back); }, exit() { location.replace(back); },
@@ -134,7 +151,7 @@ const Inbox = (() => {
         K().textBtn("Set it aside", () => { Mem.flag(c, "gmdone:" + waiting.id); K().render(); }));
       card.append(b, el("p", "small", "Set aside, it stays in the list below and you can still reply. The next message then comes in a few days."));
       page.append(card);
-    } else page.append(el("p", "panel gm-none", nextLine(c, pk)));
+    } else page.append(el("p", "panel gm-none", off() ? "Messages from the GM are off. You can turn them on again in More." : nextLine(c, pk)));
     // earlier messages, newest first
     const earlier = msgsOf(pk).filter((m) => m !== waiting && arrivedAt(c, m.id)).sort((a, b) => arrivedAt(c, b.id) - arrivedAt(c, a.id));
     if (earlier.length) {
@@ -165,13 +182,25 @@ const Inbox = (() => {
     return d;
   }
 
+  // a sent reply reviews the rooms you rightly picked: good with half the key points or more, else hard
+  function reviewRooms(c, m, picked, ticks) {
+    const g = ticks * 2 >= m.points.length ? 3 : 2, done = [];
+    picked.filter((id) => m.rooms.includes(id)).forEach((id) => { Mem.grade(c, id, g); done.push(id); });
+    return done;
+  }
+  // the rooms used in replies you've sent (for the envelope on their doors)
+  function usedRooms(c, pk) {
+    const out = new Set();
+    msgsOf(pk).forEach((m) => { if (replyOf(c, m.id)?.sent) m.rooms.forEach((id) => out.add(id)); });
+    return out;
+  }
   // for the case notebook: your sent replies, oldest first
   function sent(c, pk) {
     return msgsOf(pk).filter((m) => replyOf(c, m.id)?.sent && replyOf(c, m.id)?.text?.trim())
       .map((m) => ({ m, r: replyOf(c, m.id) })).sort((a, b) => (arrivedAt(c, a.m.id) || 0) - (arrivedAt(c, b.m.id) || 0));
   }
 
-  return { has, deliver, state, render, play, letter, answer, fill, sent, nextLine, msgsOf, GAP };
+  return { has, deliver, state, render, play, letter, answer, fill, sent, nextLine, msgsOf, reviewRooms, usedRooms, GAP };
 })();
 
 window.Inbox = Inbox;

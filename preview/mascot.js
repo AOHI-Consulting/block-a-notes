@@ -212,6 +212,11 @@ const Crab = (() => {
     s += `<rect x="${x0 + 12}" y="${fb + 9}" width="40" height="20" rx="3" fill="${LIT}" stroke="${INK}" stroke-width="1.8"/><rect x="${x1 - 52}" y="${fb + 9}" width="40" height="20" rx="3" fill="${LIT}" stroke="${INK}" stroke-width="1.8"/>`;
     s += `<path d="M${mid - 18} ${lb} V${lb - 17} A18 14 0 0 1 ${mid + 18} ${lb - 17} V${lb} Z" fill="${DOOR}" stroke="${INK}" stroke-width="2.4"/>`;
     s += `<path d="M${mid - 15.5} ${lb} V${lb - 7} Q${mid} ${lb - 20} ${mid + 15.5} ${lb - 7} V${lb} Z" fill="${CORAL}" stroke="${INK}" stroke-width="2"/>`;
+    // a letter from the GM waiting: an envelope in the left lobby window
+    if (spec.mail) {
+      const ex = x0 + 21, ey = fb + 11.5;
+      s += `<g class="ho-mail"><rect x="${ex}" y="${ey}" width="22" height="15" rx="2" fill="${WHITE}" stroke="${INK}" stroke-width="1.6"/><path d="M${ex} ${ey + 1} L${ex + 11} ${ey + 8.5} L${ex + 22} ${ey + 1}" fill="none" stroke="${INK}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="${ex + 22}" cy="${ey}" r="3.4" fill="${CORAL}" stroke="${INK}" stroke-width="1.2"/></g>`;
+    }
     const mood = spec.mood || "idle";
     s += eyes([mid - 7.5, mid + 7.5], lb - 17.5, 5.4, mood === "happy" ? "happy" : "open") + mouth(mid, lb - 7, mood === "happy" ? "open" : "smile", 7);
     return s + "</svg>";

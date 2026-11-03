@@ -228,6 +228,14 @@ const Today = (() => {
       week,
     };
   }
+  // last week (Monday to Sunday, local time): study days and cards, from mem:days. from/to in seconds.
+  function lastWeek(days, today) {
+    const t0 = num(today), dow = (t0 + 3) % 7, mon = t0 - dow - 7;
+    let studyDays = 0, cards = 0;
+    Object.entries(days || {}).forEach(([d, c]) => { const n = num(d); if (n >= mon && n < mon + 7) { cards += c; if (c >= DAY_MIN) studyDays++; } });
+    const [y, m, d] = today.split("-").map(Number), start = new Date(y, m - 1, d - dow - 7), end = new Date(y, m - 1, d - dow);
+    return { week: wkOf(mon), studyDays, cards, from: Math.floor(start.getTime() / 1000), to: Math.floor(end.getTime() / 1000) };
+  }
   // the line at the end of a lesson about your run (null when the run is hidden, or nothing to say)
   function endNote(before) {
     if (store.get("study:run:off")) return null;
@@ -239,7 +247,7 @@ const Today = (() => {
     return null;
   }
 
-  return { plan, retry, tomorrow, run, endNote, setTerm, path, cue, nameOf, pickOf, whereOf, DAY_MIN, FADING, AWAY };
+  return { plan, retry, tomorrow, run, endNote, setTerm, lastWeek, path, cue, nameOf, pickOf, whereOf, DAY_MIN, FADING, AWAY };
 })();
 
 window.Today = Today;

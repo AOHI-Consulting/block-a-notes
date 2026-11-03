@@ -624,6 +624,27 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 .td-mix button { display: inline-flex; align-items: center; gap: 4px; border: 1px dashed var(--line); background: none; padding: 3px 10px; border-radius: 999px; font: 600 12px var(--mono); color: var(--muted); }
 .td-mix button[aria-pressed="true"] { border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, var(--panel)); color: var(--ink); }
 .td-mix button svg { width: 12px; height: 12px; }
+.td-mixline { margin: 6px 0 0; }
+.td-set { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--panel-2); width: 100%; }
+.td-set .td-mix { margin: 0; }
+.td-set > .tbtn { margin-left: auto; font-size: 12.5px; }
+.ix-jump { display: flex; flex-wrap: wrap; gap: 6px; }
+.ix-jump .chip { cursor: pointer; border: 0; }
+.ix-sec { scroll-margin-top: 80px; }
+@media print { .ix-jump { display: none; } }
+.st-light { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font: 600 11.5px var(--mono); color: var(--muted); }
+.st-light i { width: 9px; height: 9px; border-radius: 2px; border: 1.4px solid var(--ink-2); background: #2F3E66; }
+.st-light.lit i { background: #FFD45C; }
+.st-light.dim i { background: #B59A52; }
+.st-light.lit { color: var(--ink-2); }
+.td-weeknote { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 9px 12px; border-radius: 12px; background: var(--gold-wash); color: var(--ink-2); font-size: 13.5px; line-height: 1.45; }
+.td-weeknote > svg { width: 17px; height: 17px; color: var(--gold); }
+.td-weeknote p { margin: 0; }
+.td-weeknote b { color: var(--ink); }
+.td-wkx { border: 0; background: none; padding: 4px; color: var(--muted); cursor: pointer; display: grid; }
+.td-wkx svg { width: 15px; height: 15px; }
+.td-mixline .tbtn { font-size: 12.5px; }
+.mo-sec p b { color: var(--ink); }
 .td-run { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; border-top: 1px solid var(--line); padding-top: 14px; }
 .td-run > .tbtn { margin-left: auto; font-size: 12px; }
 .td-week { list-style: none; margin: 0; padding: 0; display: flex; gap: 5px; }
@@ -971,6 +992,21 @@ a.fd-tile:hover { border-color: var(--line-2); }
 .ho-next .btn.ho-go { background: var(--cc, var(--accent)); border-color: var(--cc, var(--accent)); color: var(--on-cc); font-weight: 750; box-shadow: 0 4px 0 color-mix(in srgb, var(--cc, var(--accent)) 60%, #000); padding: 10px 18px; margin-top: 2px; }
 .ho-next .btn.ho-go:active { transform: translateY(3px); box-shadow: 0 1px 0 color-mix(in srgb, var(--cc, var(--accent)) 60%, #000); }
 .ho-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.ho-desk { display: grid; padding: 6px 4px; }
+.ho-desk .ho-dk { margin: 6px 12px 2px; }
+.ho-dr2 { display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center; padding: 10px 12px; border-radius: 12px; color: inherit; text-decoration: none; }
+.ho-dr2:hover { background: var(--panel-2); }
+.ho-dr2 + .ho-dr2 { border-top: 1px solid var(--line); border-radius: 0 0 12px 12px; }
+.ho-dr2 > i { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--panel-2); color: var(--ink-2); }
+.ho-dr2 > i svg { width: 17px; height: 17px; }
+.ho-dr2 > i.gold { background: var(--gold-wash); color: var(--gold); }
+.ho-dr2 > i.acc { background: var(--accent-wash); color: var(--accent-ink); }
+.ho-dr2 > i.coral { background: var(--coral-wash); color: var(--coral); }
+.ho-dr2 > span { display: grid; gap: 1px; min-width: 0; }
+.ho-dr2 b { font-size: 14.5px; }
+.ho-dr2 small { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.ho-dr2 > svg { width: 16px; height: 16px; color: var(--muted); }
+.gm-body .gm-thanks { color: var(--accent-ink); font-size: 14.5px; font-style: italic; }
 .btn.ho-act { font-weight: 650; }
 .btn.ho-act.gold svg { color: var(--gold); }
 .btn.ho-act.coral svg { color: var(--coral); }
@@ -1417,14 +1453,14 @@ body.ls-open .page { padding-top: 0; padding-bottom: 0; }
 </main>
 
 <footer>Only people with the invitation link can open this page.</footer>
-<script src="notes.js?v=31"></script>
-<script src="mascot.js?v=31"></script>
-<script src="memory.js?v=31"></script>
-<script src="today.js?v=31"></script>
-<script src="study.js?v=31"></script>
-<script src="lesson.js?v=31"></script>
-<script src="path.js?v=31"></script>
-<script src="inbox.js?v=31"></script>
-<script src="practise.js?v=31"></script>
+<script src="notes.js?v=32"></script>
+<script src="mascot.js?v=32"></script>
+<script src="memory.js?v=32"></script>
+<script src="today.js?v=32"></script>
+<script src="study.js?v=32"></script>
+<script src="lesson.js?v=32"></script>
+<script src="path.js?v=32"></script>
+<script src="inbox.js?v=32"></script>
+<script src="practise.js?v=32"></script>
 </body>
 </html>

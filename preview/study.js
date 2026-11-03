@@ -296,6 +296,14 @@ const Study = (() => {
     const s = el("span", "s"), sn = el("span", "sn");
     if (e.n && e.pk?.classes[e.n]) sn.append(el("b", null, unitShort(e.pk) + e.n + " · "));
     s.append(marked(el("span", "cn"), e.title, terms), marked(sn, snippetOf(e, terms), terms));
+    // where it stands for you: a topic's room and its light, a framework's light
+    if ((e.kind === "topic" || e.kind === "framework") && e.course) {
+      const st = Mem.get(e.course, e.id), r0 = st ? Mem.recall(e.course, e.id) : null, rm = e.kind === "topic" && e.pk ? Path.roomOf(e.pk, e.id) : null;
+      const lv = !st ? "dark" : r0 < Today.FADING ? "dim" : "lit";
+      const tag = el("span", "st-light " + lv);
+      tag.append(el("i"), document.createTextNode((rm ? "Room " + rm.no + " · " : "") + (lv === "lit" ? "you know it" : lv === "dim" ? "dimming" : "not yet")));
+      s.append(tag);
+    }
     r.append(w, s);
     if (e.href || e.q) r.append(K().icon("next"));
     return r;
@@ -596,11 +604,6 @@ const Study = (() => {
     head.append(el("p", "kicker", "More"), el("h1", null, "Check-in"));
     w.append(head);
     const sec = (title, kick) => { const s = el("section", "panel mo-sec"); if (kick) s.append(el("p", "kicker", kick)); s.append(el("h2", null, title)); w.append(s); return s; };
-    const ex = sec("Digital Developments: the exam room", "Block A · LDD");
-    ex.append(el("p", "small", "The lecturer's trial exam, three mock exams and the drill; every concept from the questions; the class decks and the book."));
-    const b = el("div", "btns");
-    b.append(link("Practice exams", "#/practise", "small ghost", "doc"), link("Topics", "#/topics", "small ghost", "search"), link("Slides and book", "#/slides", "small ghost", "book"));
-    ex.append(b);
     const you = sec("Your study");
     const toggle = (label, key, on) => {
       const lab = el("label", "mo-tog"), cb = el("input"); cb.type = "checkbox"; cb.checked = on();
@@ -609,15 +612,23 @@ const Study = (() => {
     };
     toggle("Show my run of study days", { k: "study:run:off", flip: true }, () => !runOff());
     toggle("Ask me to apply each new topic to my hotel, at the end of its lesson", { k: "study:apply:off", flip: true }, () => !store.get("study:apply:off"));
+    toggle("Messages from the GM of my hotel, now and then", { k: "study:gm:off", flip: true }, () => !store.get("study:gm:off"));
     toggle("Sound in lessons", { k: "study:sound" }, () => !!store.get("study:sound"));
     const ab = sec("How Check-in works"); ab.id = "about";
     [
-      "Every course of the Master, built from the lecturers' material, what was said in class and research we checked ourselves. Each course is a hotel: a floor per class, a room per topic. A room's window lights up once you know it and dims as it starts to fade.",
-      "Today's session mixes what is fading with something new, in 5, 10 or 15 minutes, however long you've been away: it never grows into a backlog. A day counts after 5 cards, and your run counts weeks with a study day in them: a week off is a rest, not a reset, and weeks without classes (holidays) don't count against it.",
-      "When you confuse two ideas twice, they become a mix-up: a quick round to tell them apart, until you've done it on three different days. After a topic you can apply it to a hotel of your choice; your answers collect in a case notebook per course.",
-      "The crab carries a hotel for a shell and moves into a bigger one each block. Nobody is ranked, and nothing here is marked by AI: you mark your own written answers.",
-    ].forEach((t) => ab.append(el("p", null, t)));
+      ["Each course is a hotel.", "A floor per class, a room per topic, built from the lecturers' material, what was said in class and research we checked ourselves. A room's window lights up once you know it and dims as it starts to fade. Remember it for three weeks or more and its key is yours, for good."],
+      ["A few minutes, whenever you come.", "Today's session mixes what is fading with something new, in 5, 10 or 15 minutes, however long you've been away: it never grows into a backlog. Back after a few days, it starts with what you knew best. Your run counts weeks with a study day in them, so a week off is a rest, and holidays don't count against it."],
+      ["Around your classes.", "The evening before a class, a 3-minute warm-up on the one before. In the week after, its new rooms come first, and a few of them come back on your next visits."],
+      ["Apply it like a consultant.", "After a topic you can apply it to a hotel of your choice; now and then that hotel's GM writes with a problem your rooms can help with. Your answers collect in a case notebook per course, and applying an idea counts as remembering it."],
+      ["Mix-ups and mistakes.", "When you confuse two ideas twice, they become a mix-up: a quick round to tell them apart, until you've done it on three different days. What you last got wrong waits in Your mistakes, a few at a time."],
+      ["Nobody is ranked.", "Nothing here is marked by AI: you mark your own written answers. The crab carries a hotel for a shell and moves into a bigger one each block."],
+    ].forEach(([b2, t]) => { const p = el("p"); p.append(el("b", null, b2 + " "), document.createTextNode(t)); ab.append(p); });
     syncLine(ab);
+    const ex = sec("Digital Developments: the exam room", "Block A · earlier");
+    ex.append(el("p", "small", "The lecturer's trial exam, three mock exams and the drill; every concept from the questions; the class decks and the book."));
+    const b = el("div", "btns");
+    b.append(link("Practice exams", "#/practise", "small ghost", "doc"), link("Topics", "#/topics", "small ghost", "search"), link("Slides and book", "#/slides", "small ghost", "book"));
+    ex.append(b);
   }
 
   /* ---------- your case notebook ----------
@@ -704,18 +715,36 @@ const Study = (() => {
       page.append(s);
     }
     // what you've learnt and could apply
-    const open = topics.filter((it) => Mem.get(c, it.id) && !done.some((e) => e.id === it.id));
+    const open = topics.filter((it) => Mem.get(c, it.id) && Path.applicable(it) && !done.some((e) => e.id === it.id));
     if (open.length) {
       const s = el("section", "cn-sec");
       s.append(el("h2", "cn-h", done.length ? "Learnt, not applied yet" : "Topics you've learnt"));
       const ul = el("div", "cn-open");
-      open.forEach((it) => {
+      // a few suggestions first (the most recent classes, the rooms you know best), the rest folded away
+      const known = (it) => Mem.recall(c, it.id) ?? 0;
+      const pick = [...open].sort((a, b) => b.class - a.class || known(b) - known(a)).slice(0, 3);
+      const rest = open.filter((it) => !pick.includes(it));
+      if (rest.length > 2) s.firstChild.textContent = done.length ? "Something to apply next" : "Try one of these";
+      (rest.length > 2 ? pick : open).forEach((it) => {
         const row = el("div", "cn-row"), t2 = el("span", null, it.title);
         const go = K().button("Apply it", "small ghost", () => { const ed = applyBox(c, pk, it), box = el("div", "panel cn-entry"); box.append(el("h3", null, it.title), ed.el); row.replaceWith(box); ed.focus.focus(); }, "pen");
         const chip = el("span", "chip", unitShort(pk) + it.class); chip.style.setProperty("--cc", color(it.class, pk));
         row.append(chip, t2, go); ul.append(row);
       });
-      s.append(ul); page.append(s);
+      s.append(ul);
+      if (rest.length > 2) {
+        const more = K().button("Show all " + open.length + " you've learnt", "small ghost", () => {
+          rest.forEach((it) => {
+            const row = el("div", "cn-row"), t2 = el("span", null, it.title);
+            const go = K().button("Apply it", "small ghost", () => { const ed = applyBox(c, pk, it), box = el("div", "panel cn-entry"); box.append(el("h3", null, it.title), ed.el); row.replaceWith(box); ed.focus.focus(); }, "pen");
+            const chip = el("span", "chip", unitShort(pk) + it.class); chip.style.setProperty("--cc", color(it.class, pk));
+            row.append(chip, t2, go); ul.append(row);
+          });
+          more.remove();
+        }, "plus");
+        s.append(more);
+      }
+      page.append(s);
     }
     if (!done.length && !open.length && !sent.length) page.append(el("p", "panel cn-empty", "Learn a topic first. At the end of each new topic's lesson you can apply it to your hotel, and it lands here."));
     w.append(page);
@@ -736,31 +765,43 @@ const Study = (() => {
     tg.append(cb, el("span", null, "Only what I've learnt"));
     tools.append(tg, K().button("Print or save as PDF", "small ghost", () => window.print(), "doc"));
     head.append(tools);
+    // jump to a class: the index is long on a phone
+    const jump = el("nav", "ix-jump"); jump.setAttribute("aria-label", "Jump to a " + unit(pk).toLowerCase());
+    pk.nums.forEach((n) => { const b = el("button", "chip", unitShort(pk) + n); b.type = "button"; b.style.setProperty("--cc", color(n, pk)); b.addEventListener("click", () => document.getElementById("ix-c" + n)?.scrollIntoView({ behavior: "smooth", block: "start" })); jump.append(b); });
+    head.append(jump);
     w.append(head);
     const page = el("div", "st-page ix");
     let shown = 0;
     const known = (id) => !!Mem.get(c, id);
+    const row = (it, kind) => {
+      const r = el("div", "ix-row" + (known(it.id) ? " known" : "")), t = el("div", "ix-t");
+      t.append(el("span", "ix-kind", kind), el("b", null, it.title));
+      if (kind === "Framework" && it.gist) t.append(el("p", "ix-gist", it.gist));
+      r.append(t);
+      const refs = K().sourcesLine(it.x?.refs || it.refs || (it.ref ? [it.ref] : []), links); if (refs) r.append(refs);
+      const note = Mem.note(c, it.id).trim(); if (note) r.append(el("p", "ix-note", note));
+      shown++;
+      return r;
+    };
     pk.nums.forEach((n) => {
       const cl = pk.classes[n];
       const topics = pk.items.filter((it) => it.kind === "topic" && String(it.class) === String(n) && (!mine || known(it.id)));
       const fws = pk.items.filter((it) => it.kind === "framework" && String(it.class) === String(n) && (!mine || known(it.id)));
       if (!topics.length && !fws.length) return;
-      const s = el("section", "ix-sec"); s.style.setProperty("--cc", color(n, pk));
+      const s = el("section", "ix-sec"); s.style.setProperty("--cc", color(n, pk)); s.id = "ix-c" + n;
       s.append(el("h2", "ix-h", unit(pk) + " " + n + " · " + cl.name));
-      const row = (it, kind) => {
-        const r = el("div", "ix-row" + (known(it.id) ? " known" : "")), t = el("div", "ix-t");
-        t.append(el("span", "ix-kind", kind), el("b", null, it.title));
-        if (kind === "Framework" && it.gist) t.append(el("p", "ix-gist", it.gist));
-        r.append(t);
-        const refs = K().sourcesLine(it.x?.refs || it.refs || (it.ref ? [it.ref] : []), links); if (refs) r.append(refs);
-        const note = Mem.note(c, it.id).trim(); if (note) r.append(el("p", "ix-note", note));
-        shown++;
-        return r;
-      };
       topics.forEach((it) => s.append(row(it, "Topic")));
       fws.forEach((it) => s.append(row(it, "Framework")));
       page.append(s);
     });
+    // frameworks of the whole course, in no single class
+    const general = pk.items.filter((it) => it.kind === "framework" && !pk.classes[it.class] && (!mine || known(it.id)));
+    if (general.length) {
+      const s = el("section", "ix-sec"); s.id = "ix-all";
+      s.append(el("h2", "ix-h", "The whole course"));
+      general.forEach((it) => s.append(row(it, "Framework")));
+      page.append(s);
+    }
     if (!shown) page.append(el("p", "panel cn-empty", mine ? "Nothing learnt in this course yet. Untick “Only what I've learnt” to see the whole course." : "This course has no topics yet."));
     w.append(page);
   }
@@ -1144,7 +1185,7 @@ const Study = (() => {
     const started = ready.filter((c) => Mem.summary(c.id).seen);
     return started.length ? started : ready;
   }
-  // which ready courses today's session draws from; at least one stays in
+  // which ready courses today's session draws from; at least one stays in. Folded to one line until you change it.
   function mixRow(onChange) {
     const ready = T.cat.filter((c) => c.status === "ready");
     if (ready.length < 2) return null;
@@ -1205,7 +1246,7 @@ const Study = (() => {
     const top = el("div", "td-top"), greet = el("div", "td-greet"), crab = el("div", "td-crab");
     crab.innerHTML = Crab.svg(state, crabOpt({ count: run.count }));
     greet.append(crab, el("p", "td-say", say));
-    top.append(el("p", "kicker", "Today · " + new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })), sizes(() => fillToday(box, list, load)));
+    top.append(el("p", "kicker", "Today · " + new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })));
     const body = el("div", "td-body");
     if (soon.length) {
       const cl = el("div", "td-class");
@@ -1220,7 +1261,6 @@ const Study = (() => {
       body.append(cl);
     }
     if (any) {
-      body.append(el("h2", null, run.today ? "Another " + mins() + " minutes?" : welcome ? "Welcome back · " + mins() + " minutes" : "Your " + mins() + " minutes"));
       if (welcome && p.due) body.append(el("p", "small td-back", "Some of it faded while you were away. That's normal: one session at a time brings it back, and there's no backlog to clear."));
       const ul = el("ul", "td-list"), li = (ic, cls, b, rest) => { const x = el("li"); x.append(el("i", cls, ic), el("b", null, b), el("span", null, rest)); ul.append(x); };
       const many = list.length > 1;
@@ -1237,7 +1277,7 @@ const Study = (() => {
       if (mx) { const nm = (id) => Path.short(mx.pk.items.find((it) => it.id === id).title); li("⇄", "coral", "1 mix-up", nm(mx.m.a) + " ↔ " + nm(mx.m.b)); }
       body.append(ul);
       const b = el("div", "btns");
-      b.append(K().button("Start", "primary td-start", () => K().go("study/today"), "play"));
+      b.append(K().button((run.today ? "Another " : "Start · ") + mins() + " min", "primary td-start", () => K().go("study/today"), "play"));
       body.append(b);
     }
     // a message from the GM, if one is waiting in a course of your mix (one at most; "Not today" hides it till tomorrow)
@@ -1250,10 +1290,43 @@ const Study = (() => {
       row.append(ic, t, go);
       body.append(row);
     }
-    const mr = mixRow(load); if (mr) body.append(mr);
+    if (!T.mixOpen) {
+      const ready = T.cat.filter((c) => c.status === "ready"), mine = mix();
+      const p = el("p", "td-mix td-mixline");
+      p.append(document.createTextNode(mins() + " min a day" + (ready.length > 1 ? " · from " + mine.map((c) => c.code || c.name).join(", ") : "") + " · "), K().textBtn("change", () => { T.mixOpen = true; fillToday(box, list, load); }));
+      body.append(p);
+    } else {
+      const set = el("div", "td-set");
+      set.append(sizes(() => fillToday(box, list, load)));
+      const mr = mixRow(load); if (mr) set.append(mr);
+      set.append(K().textBtn("Done", () => { T.mixOpen = false; fillToday(box, list, load); }));
+      body.append(set);
+    }
     box.append(top, greet, body);
+    const wk = weekNote(list); if (wk) box.append(wk);
     if (!runOff()) box.append(runRow(run));
     else { const p = el("p", "small td-hidden"); p.append(document.createTextNode("Your run of study days is hidden. "), K().textBtn("Show it", () => { store.set("study:run:off", false); K().render(); })); box.append(p); }
+  }
+  // the week that was, on your first visits of a new week: only what went well, and only if something did
+  function weekNote(list) {
+    const lw = Today.lastWeek(Mem.days(), Mem.today());
+    if (!lw.cards || store.get("study:week:seen") === lw.week + 1) return null;
+    const parts = [];
+    if (lw.studyDays) parts.push(plural(lw.studyDays, "study day"));
+    parts.push(plural(lw.cards, "card"));
+    let keys = 0, letters = 0;
+    T.cat.filter((c) => c.status === "ready").forEach((c) => {
+      keys += Mem.flagsBetween(c.id, "key:", lw.from, lw.to).length;
+      letters += Mem.flagsBetween(c.id, "gmdone:", lw.from, lw.to).filter((k) => Mem.caseGet(c.id, "gm:" + k.slice(7))?.sent).length;
+    });
+    if (keys) parts.push(plural(keys, "new key"));
+    if (letters) parts.push(plural(letters, "letter to the GM", "letters to the GM"));
+    const box = el("div", "td-weeknote"), t = el("p");
+    t.append(el("b", null, "Last week at the hotel: "), document.createTextNode(parts.join(" · ") + "."));
+    const x = el("button", "td-wkx"); x.type = "button"; x.setAttribute("aria-label", "Close"); x.append(K().icon("x"));
+    x.addEventListener("click", () => { store.set("study:week:seen", lw.week + 1); box.remove(); });
+    box.append(K().icon("star"), t, x);
+    return box;
   }
   function sizes(onChange) {
     const g = el("div", "td-sizes"); g.setAttribute("role", "group"); g.setAttribute("aria-label", "Minutes a day");

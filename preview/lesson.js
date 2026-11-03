@@ -572,8 +572,9 @@ const Lesson = (() => {
       shuffle(ex.pairs).forEach((p, i) => { const b = make(p, "l", p.name); b.prepend(el("kbd", null, String(i + 1))); left.append(b); });
       shuffle(ex.pairs).forEach((p) => right.append(make(p, "r", p.text)));
       grid.append(left, right); a.append(grid);
+      let shown = false;   // "Show me": the pairs are given, nothing more to match or grade
       function tap(b, p, side) {
-        if (b.classList.contains("done")) return;
+        if (shown || b.classList.contains("done")) return;
         if (!sel || sel.side === side) {
           if (sel) sel.b.classList.remove("sel");
           sel = sel?.b === b ? null : { b, p, side };
@@ -593,13 +594,15 @@ const Lesson = (() => {
         }
       }
       function allDone() {
-        if (!R || R.cur?.ex !== ex) return;
+        if (shown || !R || R.cur?.ex !== ex) return;
         const total = Object.values(miss).reduce((s, v) => s + v, 0);
         ex.pairs.forEach((p) => { const m = miss[p.id] || 0; Mem.grade(ex.course, p.id, m === 0 ? 3 : m === 1 ? 2 : 1); });
         R.log.push({ ex, g: total ? 2 : 3 });
         feedback(true, total ? el("p", "ls-why", total === 1 ? "One wrong pairing on the way." : total + " wrong pairings on the way: those come back sooner.") : null, total ? "All matched" : undefined);
       }
       function skip() {
+        if (shown) return; shown = true;
+        grid.querySelectorAll("button").forEach((x) => (x.disabled = true));
         ex.pairs.forEach((p) => Mem.grade(ex.course, p.id, 1));
         R.log.push({ ex, g: 1 });
         const b = el("ul", "ls-pairlist");
@@ -809,6 +812,7 @@ const Lesson = (() => {
         locked = true;
         bs.forEach(({ b, id }) => { b.disabled = true; if (right.has(id)) b.classList.add(picked.has(id) || skipped ? "right" : "missed"); else if (picked.has(id)) b.classList.add("wrong"); });
         const hit = [...picked].filter((id) => right.has(id)).length, wrong = [...picked].filter((id) => !right.has(id));
+        if (ex.gmState) ex.gmState.picked = skipped ? [] : [...picked];
         const missed = m.rooms.filter((id) => !picked.has(id));
         if (!skipped && wrong.length === 1 && missed.length === 1) Mem.slip(ex.course, missed[0], wrong[0]);   // one taken for the other
         Mem.tick(); R.log.push({ ex, g: null });
@@ -845,7 +849,11 @@ const Lesson = (() => {
       ta.placeholder = "A few lines: what's going on, and what you'd do. Use the ideas from those rooms.";
       ta.setAttribute("aria-label", "Your reply to the GM");
       let tm = null;
-      const save = (more = {}) => { clearTimeout(tm); if (!ta.value.trim() && !old.text) return; Mem.caseSet(c, "gm:" + m.id, { text: ta.value, ticks: [...ticks], ...more }); };
+      const save = (more = {}) => {
+        clearTimeout(tm);
+        if (!more.sent && !ta.value.trim() && !Mem.caseGet(c, "gm:" + m.id)?.text) return;   // nothing written, nothing stored
+        Mem.caseSet(c, "gm:" + m.id, { text: ta.value, ticks: [...ticks], ...more });
+      };
       ta.addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(save, 400); });
       ta.addEventListener("blur", () => save());
       a.append(ta);
@@ -862,7 +870,12 @@ const Lesson = (() => {
       const refs = K().sourcesLine(m.refs, !!ex.pk.course.slides); if (refs) ans.append(refs);
       ans.append(el("p", "small", "One good reply, not the only one. A different route that's well argued counts too."));
       a.append(ans);
-      const send = () => { save({ sent: true }); Mem.tick(); R.log.push({ ex, g: null }); next(); };
+      const send = () => {
+        save({ sent: true }); Mem.tick();
+        // applying is remembering: the rooms you rightly picked get a review
+        const lit = Inbox.reviewRooms(c, m, ex.gmState?.picked || [], ticks.size);
+        R.log.push({ ex, g: null, gmLit: lit }); next();
+      };
       function hint() { const h = R.foot.querySelector(".ls-hint"); if (h) h.textContent = ticks.size ? "You covered " + ticks.size + " of " + m.points.length + "." : "Tick what your reply covered."; }
       footContinue("Compare with the key points", () => {
         save(); ans.hidden = false; ans.classList.add("ls-in");
@@ -877,7 +890,7 @@ const Lesson = (() => {
       const q = ex.it, a = card("ls-explain"), key = ex.course === "ldd" ? "explain" : "explain:" + ex.course;
       const all = store.get("study:" + key) || {}, st = (all[ex.n] || {})[ex.i] || {};
       const save = (fn) => { const s = store.get("study:" + key) || {}; s[ex.n] = s[ex.n] || {}; s[ex.n][ex.i] = s[ex.n][ex.i] || {}; fn(s[ex.n][ex.i]); store.set("study:" + key, s); };
-      const ask = el("h2", "ls-q"); ask.innerHTML = q.ask;   // from our notes
+      const ask = el("h2", "ls-q"); ask.innerHTML = Path.withHotel(ex.course, q.ask);   // from our notes; [hotel] becomes yours
       const ta = el("textarea", "ls-write"); ta.value = st.text || ""; ta.placeholder = "Your answer first: a few bullets and an example.";
       ta.setAttribute("aria-label", "Your answer");
       let tm = null;
@@ -992,6 +1005,7 @@ const Lesson = (() => {
       if (e.key === "Enter" && R.primary && !R.primary.disabled) { e.preventDefault(); R.primary.click(); }
       return;
     }
+    if (e.key === "Enter" && (tag === "SUMMARY" || tag === "A")) return;   // opens the section, follows the link
     if (e.key === "Enter") { if (R.primary && !R.primary.disabled) { e.preventDefault(); R.primary.click(); } return; }
     // after an answer the bar's Continue takes Enter; until then the exercise takes its keys
     if (R.foot.classList.contains("ok") || R.foot.classList.contains("no")) return;

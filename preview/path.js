@@ -69,13 +69,20 @@ const Path = (() => {
     }
     return { done, seen, total, part: nd.flag ? (done ? 1 : 0) : total ? seen / total : 0, fading };
   }
-  function current(course, pk) { return allNodes(pk).find((nd) => !status(course, nd).done) || null; }
+  // what's next: the first room, story or library not done; the rooftop (explaining, the review) is
+  // extra, so it's only next once every floor's rooms are done. It stays open on its floor any time.
+  const EXTRA = new Set(["explain", "review"]);
+  function current(course, pk) {
+    const all = allNodes(pk);
+    return all.find((nd) => !EXTRA.has(nd.kind) && !status(course, nd).done) || all.find((nd) => !status(course, nd).done) || null;
+  }
 
   /* ---------- exercises from the course's own material ---------- */
   const base = (c, pk, it) => ({ course: c, pk, it, items: [{ course: c, id: it.id }] });
   const learnEx = (c, pk, it) => ({ type: "learn", ...base(c, pk, it), retryable: false });
   const sayEx = (c, pk, t) => ({ type: "say", ...base(c, pk, t), retryable: false });
   const mcqEx = (c, pk, q) => ({ type: "mcq", ...base(c, pk, q) });
+  const flashEx = (c, pk, f) => ({ type: "flash", ...base(c, pk, f) });   // the fallback: every framework can be asked this way
   function pickEx(c, pk, f) { const p = Today.pickOf(pk, f); return p ? { type: "pick", ...base(c, pk, f), pick: p } : null; }
   function typeEx(c, pk, f) {
     const name = nameOf(f.title), cue = Today.cue(f);
@@ -265,7 +272,7 @@ const Path = (() => {
       const g = guessEx(c, pk, t, q[0]); if (g) steps.push(g);
       steps.push(...teachSteps(c, pk, t));
       f.forEach((x) => { if (!taught(x, t)) steps.push(learnEx(c, pk, x)); });
-      f.forEach((x) => { const e = pickEx(c, pk, x) || typeEx(c, pk, x); if (e) later.push(e); });
+      f.forEach((x) => later.push(pickEx(c, pk, x) || typeEx(c, pk, x) || flashEx(c, pk, x)));
       q.forEach((x) => later.push(mcqEx(c, pk, x)));
     });
     // the checks come after the topic is taught: a little distance helps them stick
@@ -276,15 +283,19 @@ const Path = (() => {
     if (nd.parts.length) steps.push(sayEx(c, pk, nd.parts[0].t));
     // then, optionally, apply it to your hotel (your case notebook), unless you've done so already
     const t0 = nd.parts[0]?.t;
-    if (t0 && !store.get("study:apply:off") && !Mem.caseGet(c, t0.id)?.text?.trim()) steps.push({ type: "apply", ...base(c, pk, t0), items: [], retryable: false });
+    if (t0 && applicable(t0) && !store.get("study:apply:off") && !Mem.caseGet(c, t0.id)?.text?.trim()) steps.push({ type: "apply", ...base(c, pk, t0), items: [], retryable: false });
     return steps.filter(Boolean);
   }
   function frameworkSteps(c, pk, fws) {
     const steps = fws.map((f) => learnEx(c, pk, f));
     const m = matchEx(c, pk, fws);
     if (m) steps.push(m);
-    const quiz = shuffle(fws).map((f, i) => (i % 2 ? typeEx(c, pk, f) || pickEx(c, pk, f) : pickEx(c, pk, f) || typeEx(c, pk, f))).filter(Boolean);
-    steps.push(...quiz.slice(0, m ? 3 : 5));
+    const quiz = shuffle(fws).map((f, i) => (i % 2 ? typeEx(c, pk, f) || pickEx(c, pk, f) : pickEx(c, pk, f) || typeEx(c, pk, f)) || flashEx(c, pk, f));
+    const asked = quiz.slice(0, m ? 3 : 5);
+    // every framework is asked once somewhere, or its shelf could never be done
+    const covered = new Set([...(m ? m.items.map((x) => x.id) : []), ...asked.map((e) => e.it.id)]);
+    fws.forEach((f) => { if (!covered.has(f.id)) asked.push(flashEx(c, pk, f)); });
+    steps.push(...asked);
     return steps;
   }
   // practise what you've had: a mix that asks for each item from a side you can answer without reading first
@@ -297,10 +308,13 @@ const Path = (() => {
       if (out.length >= size) break;
       if (it.kind === "topic") out.push(topicCheck(c, pk, it));
       else if (it.kind === "mcq") out.push(mcqEx(c, pk, it));
-      else if (it.kind === "framework") { fwSeen.push(it); if (fwSeen.length <= 2) out.push(Math.random() < 0.5 ? typeEx(c, pk, it) || pickEx(c, pk, it) : pickEx(c, pk, it) || typeEx(c, pk, it)); }
+      else if (it.kind === "framework") { fwSeen.push(it); if (fwSeen.length <= 2) out.push((Math.random() < 0.5 ? typeEx(c, pk, it) || pickEx(c, pk, it) : pickEx(c, pk, it) || typeEx(c, pk, it)) || flashEx(c, pk, it)); }
     }
-    const more = fwSeen.slice(2);
-    if (more.length >= 3) out.push(matchEx(c, pk, more));
+    const more = fwSeen.slice(2), mm = more.length >= 3 ? matchEx(c, pk, more) : null;
+    if (mm) out.push(mm);
+    // frameworks past the first two that the match can't take still get a card
+    const inMatch = new Set(mm ? mm.items.map((x) => x.id) : []);
+    more.forEach((f) => { if (!inMatch.has(f.id) && out.length < size + 2) out.push(flashEx(c, pk, f)); });
     // and one "find it fast", when what you practise spans classes
     const topics = items.filter((it) => it.kind === "topic");
     if (topics.length >= 3) out.push(whereFrom(c, pk, topics));
@@ -317,12 +331,16 @@ const Path = (() => {
   }
   function stepsFor(c, pk, nd, again) {
     if (nd.kind === "story") return [{ type: "story", course: c, pk, n: nd.n, paras: pk.classes[nd.n].story, qs: nd.qs, items: [], retryable: false }];
-    if (nd.kind === "explain") return nd.prompts.map((q) => ({ type: "explain", ...base(c, pk, q), n: nd.n, i: pk.classes[nd.n].likely.findIndex((x) => x.id === q.id), retryable: false }));
+    if (nd.kind === "explain") {
+      // one question a visit: the first you haven't answered, else the one you know least
+      const q = nd.prompts.find((x) => !Mem.get(c, x.id)) || [...nd.prompts].sort((a, b) => (Mem.recall(c, a.id) ?? 0) - (Mem.recall(c, b.id) ?? 0))[0];
+      return [{ type: "explain", ...base(c, pk, q), n: nd.n, i: pk.classes[nd.n].likely.findIndex((x) => x.id === q.id), retryable: false }];
+    }
     if (nd.kind === "review") return practiceSteps(c, pk, nd.items, 12);
     if (again) return practiceSteps(c, pk, nd.items, 8);
     return nd.kind === "lesson" ? lessonSteps(c, pk, nd) : frameworkSteps(c, pk, nd.fws);
   }
-  const minutes = (nd) => Math.max(2, Math.round(({ story: 3, explain: 6 * (nd.prompts?.length || 1), review: 5, lesson: 2.5 + (nd.items.length - 1) * 0.4 }[nd.kind]) || nd.items.length * 0.5 + 1));
+  const minutes = (nd) => Math.max(2, Math.round(({ story: 3, explain: 6, review: 5, lesson: 2.5 + (nd.items.length - 1) * 0.4 }[nd.kind]) || nd.items.length * 0.5 + 1));
 
   /* ---------- the course as a hotel ----------
      A class is a floor (the first at street level), a topic a room with a window: lit once you know it,
@@ -412,7 +430,7 @@ const Path = (() => {
     // the building
     const left = el("div", "ho-left"), bld = el("div", "ho-bld");
     bld.innerHTML = Crab.hotel({
-      code: crs.code || "", mood: run.today ? "happy" : "idle", sky: Crab.skyAt(), lights: Crab.seasonAt() === "lights",
+      code: crs.code || "", mood: run.today ? "happy" : "idle", sky: Crab.skyAt(), lights: Crab.seasonAt() === "lights", mail: !!Inbox.deliver(course, pk),
       label: (crs.code || crs.name) + " as a hotel: a floor per " + U.toLowerCase() + ", a window per topic. " + litLine(c) + (keys.size ? ", " + keys.size + (keys.size === 1 ? " key" : " keys") : "") + ".",
       floors: [...floors.map((u) => {
         const fc = roomsLit(course, [u]), ls = lessonsOf(u), j = justDone ? ls.findIndex((nd) => nd.id === justDone) : -1, rn = needsReno(course, u, pk);
@@ -429,15 +447,18 @@ const Path = (() => {
     // what to do next, and the floors
     const side = el("div", "ho-side");
     side.append(nextCard(course, pk, cur, planned));
-    const acts = el("div", "ho-acts"), fade = fadingIds(course, pk).length, mixes = mixList(course, pk).length, miss = mistakes(course, pk).length;
-    const rf = renoFloor(course, pk);
-    if (rf) acts.append(act("Renovate floor " + rf.n, "#/study/" + course + "/l/renovate-" + rf.n, "gold", "wrench", dimOn(course, rf) + " rooms dimming on floor " + rf.n + ": a few minutes brings them back"));
-    else if (fade) acts.append(act("Refresh · " + refreshMins(fade) + " min", "#/study/" + course + "/l/refresh", "gold", "sun", "Some of what you learnt is fading: a few minutes brings it back"));
+    // the front desk: everything else waiting in this hotel, one row each, with why and how long
+    const fade = fadingIds(course, pk).length, mixL = mixList(course, pk), miss = mistakes(course, pk).length;
+    const desk = el("nav", "panel ho-desk"); desk.setAttribute("aria-label", "Also waiting at the front desk");
+    const row = (ic, cls, b, why, href) => { const a = el("a", "ho-dr2"), i = el("i", cls); i.append(K().icon(ic)); const t = el("span"); t.append(el("b", null, b), el("small", null, why)); a.href = href; a.append(i, t, K().icon("next")); desk.append(a); };
     const letter = Inbox.deliver(course, pk);
-    if (letter) acts.append(act("A message from the GM", "#/study/" + course + "/inbox", "acc", "mail", "“" + letter.title + "”: your rooms can help"));
-    if (mixes) acts.append(act(mixes === 1 ? "1 mix-up" : mixes + " mix-ups", "#/study/" + course + "/l/mixups", "coral", "swap", "Ideas you keep confusing: tell them apart"));
-    if (miss) acts.append(act("Your mistakes " + miss, "#/study/" + course + "/l/mistakes", "plain", "reset", "What you last got wrong: one more go"));
-    if (acts.children.length) side.append(acts);
+    if (letter) row("mail", "acc", "A message from the GM", "“" + letter.title + "” · about 5 min", "#/study/" + course + "/inbox");
+    const rf = renoFloor(course, pk);
+    if (rf) row("wrench", "gold", "Renovate floor " + rf.n, dimOn(course, rf) + " rooms dimming on “" + rf.name + "” · " + renoPlan(course, pk, rf).mins + " min", "#/study/" + course + "/l/renovate-" + rf.n);
+    else if (fade) row("sun", "gold", "Refresh", "Some of what you learnt is fading · " + refreshMins(fade) + " min", "#/study/" + course + "/l/refresh");
+    if (mixL.length) { const m0 = mixL[0], nm = (id) => short(itemOf(pk, id)?.title || ""); row("swap", "coral", mixL.length === 1 ? "A mix-up to sort out" : mixL.length + " mix-ups to sort out", nm(m0.a) + " ↔ " + nm(m0.b), "#/study/" + course + "/l/mixups"); }
+    if (miss) row("reset", "plain", "Your mistakes", (miss <= 9 ? miss + " to put right" : "A few at a time") + ": one more go", "#/study/" + course + "/l/mistakes");
+    if (desk.children.length) { desk.prepend(el("p", "kicker ho-dk", "Also at the front desk")); side.append(desk); }
     side.append(keyRing(keys, c.rooms));
     const list = el("section", "ho-floors");
     list.append(el("h2", "ho-h", "Floors"));
@@ -452,7 +473,7 @@ const Path = (() => {
     side.append(list);
     // the rest: your notebook, flashcards, and a course's own extras (LDD's exam room)
     const more = el("div", "ho-more");
-    const nb = Mem.caseAll(course).length;
+    const nb = Mem.caseAll(course).filter((e) => !e.id.startsWith("gm:")).length + Inbox.sent(course, pk).length;   // what the notebook shows
     more.append(SK().link("Case notebook" + (nb ? " · " + nb : ""), "#/study/" + course + "/case", "small", "pen"), SK().link("Your index", "#/study/" + course + "/index", "small", "search"));
     if (Inbox.has(pk)) more.append(SK().link("The GM's inbox", "#/study/" + course + "/inbox", "small", "mail"));
     if (pk.frameworks.length) more.append(SK().link("Framework flashcards", "#/study/" + course + "/cards", "small", "layers"));
@@ -546,7 +567,7 @@ const Path = (() => {
       bn.append(ic, t, SK().link("Renovate · " + renoPlan(course, pk, u).mins + " min", "#/study/" + course + "/l/renovate-" + u.n, "primary ho-go", "wrench"));
       w.append(bn);
     }
-    const keys = new Set(claimKeys(course, pk));
+    const keys = new Set(claimKeys(course, pk)), lettered = Inbox.usedRooms(course, pk);
     const ol = el("ol", "ho-doors");
     u.nodes.forEach((nd) => {
       const st = status(course, nd), isCur = cur && cur.id === nd.id;
@@ -559,6 +580,7 @@ const Path = (() => {
       a.append(ic, t);
       const applied = nd.kind === "lesson" && Mem.caseGet(course, nd.parts[0].t.id)?.text?.trim();
       if (applied) { const p = el("span", "ho-pen"); p.title = "In your case notebook"; p.append(K().icon("pen")); a.append(p); }
+      if (nd.kind === "lesson" && lettered.has(nd.parts[0].t.id)) { const p = el("span", "ho-pen"); p.title = "Used in a reply to the GM"; p.append(K().icon("mail")); a.append(p); }
       const owned = nd.kind === "lesson" && keys.has(nd.parts[0].t.id);
       if (owned) { const k = el("span", "ho-keyic"); k.title = "Your key: you'll remember it for three weeks or more"; k.innerHTML = Crab.key(); a.append(k); }
       if (isCur) a.append(el("span", "ho-pill", st.seen ? "Carry on" : "Start"));
@@ -574,7 +596,7 @@ const Path = (() => {
      cards (hotel scenes, lines from the topic, summaries, each with both names blanked) into one or the
      other. A round without a miss counts as a day you told them apart; three such days settle it. */
   const itemOf = (pk, id) => pk.items.find((it) => it.id === id);
-  const mixList = (c, pk) => Mem.mixups(c).filter((m) => itemOf(pk, m.a) && itemOf(pk, m.b));
+  const mixList = (c, pk) => Mem.mixups(c).filter((m) => itemOf(pk, m.a) && itemOf(pk, m.b) && mixSteps(c, pk, m));
   const unbold = (t) => String(t || "").replace(/\*\*/g, "");
   function gistOf(it) {
     if (it.kind !== "topic") return it.gist || "";
@@ -671,10 +693,10 @@ const Path = (() => {
   const REFRESH_MAX = 10;
   const refreshMins = (n) => Math.max(2, Math.round(Math.min(n, REFRESH_MAX) * 0.5));
   function playRefresh(w, course, pk, home) {
-    const ids = fadingIds(course, pk);
-    if (!ids.length) { location.replace(home); return; }
+    const ids = fadingIds(course, pk), steps = ids.length ? practiceSteps(course, pk, ids, REFRESH_MAX) : [];
+    if (!steps.length) { location.replace(home); return; }
     Lesson.play(w, {
-      color: "var(--gold)", steps: practiceSteps(course, pk, ids, REFRESH_MAX), title: "Refreshed!",
+      color: "var(--gold)", steps, title: "Refreshed!",
       end(box) { const left = fadingIds(course, pk).length; box.append(el("p", "ls-runnote", left ? "The rest comes back a few at a time in your daily session: nothing to catch up on." : "Nothing fading in this course now.")); },
       done() { location.replace(home); }, exit() { location.replace(home); },
     });
@@ -685,6 +707,10 @@ const Path = (() => {
      your answer did (self-marked). A pack can give a topic its own prompt (x.apply, with {hotel}) and
      points (x.applyPoints); otherwise a general one. */
   const hotelOf = (c) => Mem.caseGet(c, "_hotel")?.text?.trim() || "";
+  // a topic that is a list of company cases isn't an idea to apply to your hotel
+  const applicable = (t) => !/^cases?\b/i.test(String(t.title).trim());
+  // "[hotel]" in our open questions becomes your hotel's name
+  const withHotel = (c, html) => { const h = hotelOf(c); return h ? String(html).replace(/\[hotel\]/gi, h.replace(/[&<>"]/g, (x) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[x])) : String(html); };
   function applyOf(pk, t, hotel) {
     const h = hotel || "your hotel", x = t.x || {};
     const keys = [...new Set([...String(x.plain || "").matchAll(/\*\*(.+?)\*\*/g)].map((m) => m[1]).filter((k) => words(k).length <= 4))].slice(0, 3);
@@ -744,9 +770,10 @@ const Path = (() => {
   function playMistakes(w, course, pk, home) {
     const ids = mistakes(course, pk);
     if (!ids.length) { location.replace(home); return; }
-    const before = ids.length, runBefore = Today.run(Mem.days(), Mem.today());
+    const before = ids.length, runBefore = Today.run(Mem.days(), Mem.today()), steps = practiceSteps(course, pk, ids, 12);
+    if (!steps.length) { location.replace(home); return; }   // nothing that can be asked: never an empty lesson
     Lesson.play(w, {
-      color: "var(--gold)", steps: practiceSteps(course, pk, ids, 12), title: "Mistakes practised!",
+      color: "var(--gold)", steps, title: "Mistakes practised!",
       end(box) {
         const left = mistakes(course, pk).length, fixed = Math.max(0, before - left);
         box.append(el("p", "ls-runnote", fixed ? fixed + (fixed === 1 ? " mistake" : " mistakes") + " put right." + (left ? " " + left + " still on the list." : " The list is empty.") : left + " still on the list: they come back here and in your daily session."));
@@ -759,7 +786,7 @@ const Path = (() => {
   }
 
   return { render, renderFloor, play, units, status, current, stepsFor, practiceSteps, teachSteps, topicCheck, sceneEx, clozeEx, matchEx, typeEx, parts, sentences, mistakes,
-           mixList, mixSteps, settle, settledLines, applyOf, hotelOf, short, litLine, claimKeys, roomOf, KEY_DAYS, whereFrom,
+           mixList, mixSteps, settle, settledLines, applyOf, hotelOf, applicable, withHotel, short, litLine, claimKeys, roomOf, KEY_DAYS, whereFrom,
            lit: (c, pk) => roomsLit(c, units(pk).filter((u) => u.n)) };
 })();
 
