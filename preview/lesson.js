@@ -115,7 +115,9 @@ const Lesson = (() => {
   // spec: { color, steps: [exercise], title?, end(box, result)?, done(result), exit() }
   function play(box, spec) {
     stop();
-    R = { spec, steps: spec.steps.slice(), i: 0, log: [], missed: [], retrying: false, combo: 0, best: 0, t0: Date.now(), primary: null, modal: null };
+    R = { spec, steps: spec.steps.slice(), i: 0, log: [], missed: [], retrying: false, combo: 0, best: 0, t0: Date.now(), primary: null, modal: null, keys: new Map() };
+    // the room keys you held before, per course in the lesson: a key earned on the way gets its moment at the end
+    spec.steps.forEach((ex) => { if (ex.course && ex.pk && !R.keys.has(ex.course)) R.keys.set(ex.course, { pk: ex.pk, before: new Set(Path.claimKeys(ex.course, ex.pk)) }); });
     document.body.classList.add("ls-open");
     const shell = el("div", "ls"); shell.style.setProperty("--cc", spec.color || "var(--accent)");
     const top = el("div", "ls-top"), x = el("button", "ls-x");
@@ -260,10 +262,21 @@ const Lesson = (() => {
     const got = [...last.values()].filter((g) => g >= 2).length, back = last.size - got;
     if (got) tile(String(got), "got it", "acc");
     if (back) tile(String(back), "coming back", "combo");
+    // a room's key, earned in this lesson
+    const fresh = []; let keyBox = null;
+    r.keys.forEach(({ pk, before }, course) => Path.claimKeys(course, pk).forEach((id) => { if (!before.has(id)) { const rm = Path.roomOf(pk, id); if (rm) fresh.push(rm); } }));
+    if (fresh.length) {
+      const kb = el("div", "ls-keys"), ic = el("span", "ls-keyic"), kt = el("div");
+      ic.innerHTML = Crab.key();
+      kt.append(el("p", "ls-keyh", fresh.length === 1 ? "A new key!" : fresh.length + " new keys!"));
+      fresh.forEach((rm) => kt.append(el("p", null, "Room " + rm.no + ", " + rm.title + ": you'll remember it for three weeks or more now. It's yours.")));
+      kb.append(ic, kt); keyBox = kb;
+    }
     const m = Math.floor(result.secs / 60), s = result.secs % 60;
     tile(m + ":" + String(s).padStart(2, "0"), "minutes", "time");
     if (r.best >= 3) tile(String(r.best), "in a row, at best", "combo");
     end.append(stats);
+    if (keyBox) end.append(keyBox);
     r.spec.end?.(end, result);
     r.stage.append(end);
     tone("done"); confetti(r.shell);

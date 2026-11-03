@@ -38,7 +38,7 @@ const Study = (() => {
   const failed = (e) => (e && e.name === "OperationError" ? "key" : "net");
   function catalog() {
     if (T.cat) return Promise.resolve(T.cat);
-    if (!T.catLoading) T.catLoading = K().openBox("packs/catalog.enc").then((c) => (T.cat = c.courses)).catch((e) => { T.catLoading = null; throw e; });
+    if (!T.catLoading) T.catLoading = K().openBox("packs/catalog.enc").then((c) => { T.blocks = c.blocks || []; return (T.cat = c.courses); }).catch((e) => { T.catLoading = null; throw e; });
     return T.catLoading;
   }
   function pack(id) {
@@ -398,6 +398,17 @@ const Study = (() => {
      Today first, with the crab. Then the courses of the block you're in, the ones that run across
      blocks, and earlier blocks folded away (open when the current block has nothing ready yet). The
      current block is the latest one in the course list. Search has its own tab. */
+  // the block you're in (by its start date) and the crab's shell for it: Block A a beach hut, B a
+  // boutique hotel, C and after a grand hotel
+  const SHELLS = ["hut", "boutique", "grand"];
+  function blockNow() {
+    const list = (T.blocks || []).filter((b) => b.start).sort((a, b) => a.start.localeCompare(b.start)), d = Mem.today();
+    let i = -1; list.forEach((b, k) => { if (b.start <= d) i = k; });
+    return i < 0 ? null : { ...list[i], i, shell: SHELLS[Math.min(i, 2)], prev: list[i - 1] || null };
+  }
+  const shellNow = () => blockNow()?.shell || "boutique";
+  const crabOpt = (o = {}) => ({ shell: shellNow(), lights: Crab.seasonAt() === "lights", ...o });
+  const dayOf = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
   function blocksOf() {
     const all = [...new Set(T.cat.map((c) => c.block))], single = all.filter((b) => /^[A-Z]$/.test(b)).sort();
     const now = single[single.length - 1] || null;
@@ -406,15 +417,20 @@ const Study = (() => {
   function renderPicker(w) {
     w.append(el("h1", "sr", "Study"));
     const page = el("div", "st-page fd");
+    movingDay(page);
     todayCard(page);
     const { now, across, past } = blocksOf(), tiles = [];
     const grid = (list) => { const g = el("div", "fd-grid"); list.forEach((c) => { const t = courseTile(c); tiles.push([c, t]); g.append(t); }); return g; };
     const nowReady = now && T.cat.some((c) => c.block === now && c.status === "ready");
-    if (now) { const s = el("section", "fd-sec"); s.append(el("h2", "fd-h", "Block " + now + " · now"), grid(T.cat.filter((c) => c.block === now))); page.append(s); }
+    const nowStart = (T.blocks || []).find((b) => b.id === now)?.start;
+    if (now) { const s = el("section", "fd-sec"); s.append(el("h2", "fd-h", "Block " + now + (nowStart && nowStart > Mem.today() ? " · starts " + dayOf(nowStart) : " · now")), grid(T.cat.filter((c) => c.block === now))); page.append(s); }
     across.forEach((b) => { const s = el("section", "fd-sec"); s.append(el("h2", "fd-h", "Across blocks " + b), grid(T.cat.filter((c) => c.block === b))); page.append(s); });
     past.forEach((b, i) => {
       const list = T.cat.filter((c) => c.block === b), d = el("details", "fd-past"), sm = el("summary");
-      sm.append(el("span", "fd-h", "Block " + b + " · done"), el("small", null, list.map((c) => c.code || c.name).join(", ")));
+      const k = (T.blocks || []).findIndex((x) => x.id === b), hut = el("span", "fd-hut");
+      // the crab's old shell, asleep, once the block is really over (by date)
+      if (k >= 0 && (blockNow()?.i ?? -1) > k) { hut.innerHTML = Crab.svg("rest", { shell: SHELLS[Math.min(k, 2)] }); hut.title = "The crab's old shell"; }
+      sm.append(hut, el("span", "fd-h", "Block " + b + " · done"), el("small", null, list.map((c) => c.code || c.name).join(", ")));
       d.append(sm, grid(list));
       if (!nowReady && i === 0) d.open = true;
       page.append(d);
@@ -427,6 +443,26 @@ const Study = (() => {
     const ready = T.cat.filter((c) => c.status === "ready");
     Promise.all(ready.map((c) => pack(c.id))).then(() => tiles.forEach(([c, t]) => { if (t.isConnected && c.status === "ready") t.replaceWith(courseTile(c)); })).catch(() => {});
   }
+  // moving day: the first weeks of a new block, a card until you've seen it
+  function movingDay(page) {
+    const b = blockNow();
+    if (!b || b.i < 1 || store.get("study:moved") === b.id) return;
+    if ((new Date(Mem.today()) - new Date(b.start)) / 864e5 > 21) return;
+    const box = el("section", "panel fd-move"), scene = el("div", "fd-scene"), t = el("div", "fd-movet");
+    const from = el("span", "fd-from"), arrow = el("span", "fd-arrow"), to = el("span", "fd-to");
+    from.innerHTML = Crab.svg("idle", { shell: SHELLS[Math.min(b.i - 1, 2)] }).replace("<svg ", '<svg opacity=".45" ');
+    arrow.append(K().icon("arrow"));
+    to.innerHTML = Crab.svg("done", crabOpt({ label: "The crab in its new hotel" }));
+    scene.append(from, arrow, to);
+    const NAME = { hut: "beach hut", boutique: "boutique hotel", grand: "grand hotel" };
+    const these = T.cat.filter((c) => c.block === b.id).map((c) => [c.code, c.name].filter(Boolean).join(" · "));
+    t.append(el("p", "kicker", "Block " + b.id + " · " + dayOf(b.start)), el("h2", null, "Moving day!"),
+      el("p", null, "Block " + b.id + " has started, and the crab has moved out of its " + NAME[SHELLS[Math.min(b.i - 1, 2)]] + " into a " + NAME[b.shell] + "." + (these.length ? " On the front desk now: " + these.join(", ") + "." : "")));
+    const go = K().button("Settle in", "primary small", () => { store.set("study:moved", b.id); box.remove(); });
+    t.append(go);
+    box.append(scene, t);
+    page.append(box);
+  }
   function courseTile(c) {
     const ready = c.status === "ready", pk = ready ? T.packs.get(c.id) : null;
     const a = el(ready ? "a" : "div", "fd-tile" + (ready ? "" : " coming"));
@@ -436,8 +472,8 @@ const Study = (() => {
     name.append(el("b", null, c.name));
     let line;
     if (pk) {
-      const r = Path.lit(c.id, pk), sm = Mem.summary(c.id);
-      line = r.lit || sm.seen ? Path.litLine(r) : r.rooms + " rooms on " + pk.nums.length + " floors · not started";
+      const r = Path.lit(c.id, pk), sm = Mem.summary(c.id), nk = Path.claimKeys(c.id, pk).length;
+      line = (r.lit || sm.seen ? Path.litLine(r) : r.rooms + " rooms on " + pk.nums.length + " floors · not started") + (nk ? " · " + nk + (nk === 1 ? " key" : " keys") : "");
       mh.innerHTML = Crab.mini(pk.nums.length, r.rooms ? r.lit / r.rooms : 0);
     } else if (ready) {
       const sm = Mem.summary(c.id);
@@ -999,7 +1035,7 @@ const Study = (() => {
       : p.due ? mins() + " minutes today. What's fading comes first."
       : mins() + " minutes today, with something new.";
     const top = el("div", "td-top"), greet = el("div", "td-greet"), crab = el("div", "td-crab");
-    crab.innerHTML = Crab.svg(state, { count: run.count });
+    crab.innerHTML = Crab.svg(state, crabOpt({ count: run.count }));
     greet.append(crab, el("p", "td-say", say));
     top.append(el("p", "kicker", "Today · " + new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })), sizes(() => fillToday(box, list, load)));
     const body = el("div", "td-body");

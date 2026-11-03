@@ -47,15 +47,30 @@ const Crab = (() => {
   const zz = (x, y) => `<g fill="currentColor" ${F} font-weight="800"><text x="${x}" y="${y}" font-size="9">z</text><text x="${x + 7}" y="${y - 9}" font-size="12.5">z</text></g>`;
   const moon = (x, y) => `<path d="M${x} ${y - 9} A9 9 0 1 0 ${x + 8.6} ${y + 3.2} A7 7 0 1 1 ${x} ${y - 9} Z" fill="${GOLD}" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>`;
 
-  /* ---------- the crab ---------- */
+  /* ---------- the crab ----------
+     Its shell grows with the Master: a beach hut in Block A, a boutique hotel in Block B, a grand hotel
+     from Block C. opt: shell, count (on the flag when your run counts today), lights (December). */
   const POSE = { hold: ["up", "up"], idle: ["idle", "idle"], icon: ["idle", "idle"], right: ["up", "up"], wrong: ["idle", "think"], done: ["up", "up"], run: ["idle", "up"], rest: ["tuck", "tuck"] };
   const EYE = { hold: "open", idle: "open", icon: "open", right: "happy", done: "happy", run: "happy", wrong: "look", rest: "sleep" };
   const MOUTH = { hold: "smile", idle: "smile", icon: "smile", right: "open", done: "open", run: "smile", wrong: "o", rest: "sleep" };
+  const WOOD = "#E8C08A", GRAND = "#ECE4F8", BULBS = [CORAL, LIT, MINT, SKY];
+  const flagAt = (x, base, top, state, count) => `<path d="M${x} ${base} V${top}" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/>` +
+    (state === "run" ? `<path d="M${x} ${top - 2.5} H${x + 26} L${x + 21.5} ${top + 4.5} L${x + 26} ${top + 11.5} H${x} Z" fill="${CORAL}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/><text x="${x + 12}" y="${top + 9}" text-anchor="middle" ${F} font-weight="800" font-size="11" fill="#fff">${count ?? ""}</text>`
+      : `<path d="M${x} ${top + 1} L${x + 15} ${top + 5.5} L${x} ${top + 10} Z" fill="${CORAL}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>`);
+  // a string of fairy lights through points, sagging between them
+  function bulbs(pts, cls = "ho-bulb") {
+    let d = `M${pts[0][0]} ${pts[0][1]}`, out = "";
+    for (let i = 1; i < pts.length; i++) { const [x, y] = pts[i], [px, py] = pts[i - 1]; d += ` Q${(x + px) / 2} ${(y + py) / 2 + 4} ${x} ${y}`; }
+    out += `<path d="${d}" fill="none" stroke="${INK}" stroke-width="1" opacity=".7"/>`;
+    pts.forEach(([x, y], i) => { out += `<circle class="${cls}" style="animation-delay:${(i % 4) * .35}s" cx="${x}" cy="${y + 2.4}" r="3.1" fill="${BULBS[i % 4]}" stroke="${INK}" stroke-width=".8"/>`; });
+    return out;
+  }
   function crab(state = "idle", opt = {}) {
-    const lit = ["right", "done", "run", "icon"].includes(state), x0 = 28, x1 = 92;
+    const lit = ["right", "done", "run", "icon"].includes(state), shell = opt.shell || "boutique";
+    const [x0, x1] = { hut: [34, 86], boutique: [28, 92], grand: [22, 98] }[shell] || [28, 92];
     const win = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2" fill="${lit ? LIT : GLASS}" stroke="${INK}" stroke-width="2"/>` +
       (lit ? "" : `<path d="M${x + 2.5} ${y + h - 3} L${x + w * .55} ${y + 2.5}" stroke="#fff" stroke-opacity=".35" stroke-width="1.6" stroke-linecap="round"/>`);
-    let s = opt.noShadow ? "" : `<ellipse cx="60" cy="113" rx="34" ry="3.2" fill="currentColor" opacity=".13"/>`;
+    let s = opt.noShadow ? "" : `<ellipse cx="60" cy="113" rx="${shell === "grand" ? 38 : 34}" ry="3.2" fill="currentColor" opacity=".13"/>`;
     [[x0 + 8, 99, x0 + 1, 110], [x0 + 17, 100, x0 + 14, 111.5], [x1 - 8, 99, x1 - 1, 110], [x1 - 17, 100, x1 - 14, 111.5]]
       .forEach(([a, b, c, d]) => (s += limb(`M${a} ${b} Q${(a + c) / 2 + (c < a ? -2 : 2)} ${b + 3} ${c} ${d}`, CORAL, 4)));
     const L = { idle: [x0 - 11, 86, 8, -55, `M${x0 + 2} 90 Q${x0 - 5} 92 ${x0 - 9} 89`], up: [x0 - 13, 60, 8, -75, `M${x0 + 2} 88 Q${x0 - 12} 84 ${x0 - 13} 67`], tuck: [x0 - 6, 95, 7, -30, `M${x0 + 2} 95 L${x0 - 3} 95`] };
@@ -63,23 +78,41 @@ const Crab = (() => {
       think: [x1 + 6, 62, 10, 175, `M${x1 - 2} 90 Q${x1 + 16} 86 ${x1 + 10} 70`], tuck: [x1 + 7, 94, 9, -150, `M${x1 - 2} 95 L${x1 + 2} 95`] };
     const pose = POSE[state] || POSE.idle, arm = ([cx, cy, r, a, d]) => limb(d) + claw(cx, cy, r, a);
     s += arm(L[pose[0]]) + arm(R[pose[1]]);
-    // the hotel: a flag on the roof (with your run of days on it), two rows of windows
-    let b = `<path d="M60 33 V12" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/>`;
-    if (state === "run") b += `<path d="M60 9.5 H86 L81.5 16.5 L86 23.5 H60 Z" fill="${CORAL}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/><text x="72" y="21" text-anchor="middle" ${F} font-weight="800" font-size="11" fill="#fff">${opt.count ?? ""}</text>`;
-    else b += `<path d="M60 13 L75 17.5 L60 22 Z" fill="${CORAL}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>`;
-    b += `<rect x="28" y="40" width="64" height="60" rx="5" fill="${MINT}" stroke="${INK}" stroke-width="${S}"/>`;
-    b += `<rect x="24" y="33" width="72" height="9" rx="3" fill="${NAVY}" stroke="${INK}" stroke-width="${S}"/>`;
-    b += win(35, 47, 12, 9) + win(54, 47, 12, 9) + win(73, 47, 12, 9) + win(35, 59.5, 12, 9) + win(73, 59.5, 12, 9);
+    let b = "";
+    if (shell === "hut") {
+      // a beach hut: planks, a pitched roof, a round window
+      b += flagAt(60, 30, 13, state, opt.count);
+      b += `<rect x="34" y="58" width="52" height="42" rx="3" fill="${WOOD}" stroke="${INK}" stroke-width="${S}"/><path d="M35 68 H85 M35 78 H85 M35 88 H85" stroke="#B98A52" stroke-width="1.6"/>`;
+      b += `<path d="M27 61 L60 29 L93 61 Z" fill="${NAVY}" stroke="${INK}" stroke-width="${S}" stroke-linejoin="round"/>`;
+      b += `<circle cx="60" cy="49" r="6.2" fill="${lit ? LIT : GLASS}" stroke="${INK}" stroke-width="2"/>`;
+      if (opt.lights) b += bulbs([[29, 61], [37, 53], [45, 45], [53, 37], [60, 31], [67, 37], [75, 45], [83, 53], [91, 61]]);
+    } else if (shell === "grand") {
+      // a grand hotel: a dome, columns, two rows of windows
+      b += state === "run" ? flagAt(60, 21, 4, state, opt.count) : `<path d="M60 21 V15" stroke="${INK}" stroke-width="2"/><circle cx="60" cy="14" r="2.4" fill="${GOLD}" stroke="${INK}" stroke-width="1.4"/>`;
+      b += `<path d="M45 34 A15 13 0 0 1 75 34 Z" fill="${GOLD}" stroke="${INK}" stroke-width="${S}"/>`;
+      b += `<rect x="22" y="40" width="76" height="60" rx="4" fill="${GRAND}" stroke="${INK}" stroke-width="${S}"/><rect x="18" y="33" width="84" height="8" rx="3" fill="${NAVY}" stroke="${INK}" stroke-width="${S}"/>`;
+      b += win(28, 46, 11, 10) + win(45, 46, 11, 10) + win(64, 46, 11, 10) + win(81, 46, 11, 10) + win(28, 60, 11, 10) + win(81, 60, 11, 10);
+      b += `<path d="M37 71 L60 61 L83 71 Z" fill="${WHITE}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>`;
+      b += `<rect x="36.5" y="71" width="4.5" height="29" fill="${WHITE}" stroke="${INK}" stroke-width="1.8"/><rect x="79" y="71" width="4.5" height="29" fill="${WHITE}" stroke="${INK}" stroke-width="1.8"/>`;
+      if (opt.lights) b += bulbs([[20, 42], [31, 42], [42, 42], [53, 42], [64, 42], [75, 42], [86, 42], [97, 42]]);
+    } else {
+      // the boutique hotel
+      b += flagAt(60, 33, 12, state, opt.count);
+      b += `<rect x="28" y="40" width="64" height="60" rx="5" fill="${MINT}" stroke="${INK}" stroke-width="${S}"/>`;
+      b += `<rect x="24" y="33" width="72" height="9" rx="3" fill="${NAVY}" stroke="${INK}" stroke-width="${S}"/>`;
+      b += win(35, 47, 12, 9) + win(54, 47, 12, 9) + win(73, 47, 12, 9) + win(35, 59.5, 12, 9) + win(73, 59.5, 12, 9);
+      if (opt.lights) b += bulbs([[26, 43], [36, 43], [46, 43], [56, 43], [66, 43], [76, 43], [86, 43], [95, 43]]);
+    }
     b += `<path d="M42 100 V86 A18 14 0 0 1 78 86 V100 Z" fill="${state === "done" ? "#FFE7A0" : DOOR}" stroke="${INK}" stroke-width="${S}"/>`;
     b += `<path d="M44.5 100 V93.5 Q60 80 75.5 93.5 V100 Z" fill="${CORAL}" stroke="${INK}" stroke-width="2"/>`;
     b += eyes([52.5, 67.5], 83.5, 5.6, EYE[state] || "open") + mouth(60, 94, MOUTH[state] || "smile");
     s += state === "wrong" ? `<g transform="rotate(-6 60 100)">${b}</g>` : b;
     if (state === "right") s += sparkle(14, 38, .85) + sparkle(105, 26, 1);
-    if (state === "done") s += confetti() + sparkle(60, 8, .9);
+    if (state === "done") s += confetti() + sparkle(60, shell === "grand" ? 4 : 8, .9);
     if (state === "wrong") s += ask(102, 22);
     if (state === "rest") s += moon(98, 16) + zz(86, 74);
     if (state === "hold") s += card(16, 46, -12, opt.cards?.[0] || "", opt.colors?.[0]) + card(106, 38, 12, opt.cards?.[1] || "", opt.colors?.[1]);
-    return s;
+    return shell === "grand" ? `<g transform="translate(60 106) scale(.9) translate(-60 -106)">${s}</g>` : s;
   }
   // a card held in a claw (the mix-ups: one idea in each claw)
   const card = (cx, cy, a, t, col = WHITE) => `<g transform="rotate(${a} ${cx} ${cy})"><rect x="${cx - 13}" y="${cy - 9}" width="26" height="17" rx="3" fill="${col}" stroke="${INK}" stroke-width="1.8"/>` +
@@ -90,15 +123,40 @@ const Crab = (() => {
     return `<svg viewBox="${state === "hold" ? "-2 6 124 112" : "0 0 120 120"}"${label}>${crab(state, opt)}</svg>`;
   }
 
+  /* ---------- the time of day and the season, for the hotel's sky ---------- */
+  function skyAt(d = new Date()) { const h = d.getHours(); return h >= 7 && h < 18 ? "day" : (h >= 18 && h < 22) || h === 6 ? "dusk" : "night"; }
+  function seasonAt(d = new Date()) { const m = d.getMonth(), day = d.getDate(); return m === 11 || (m === 0 && day <= 6) ? "lights" : null; }
+  const SKIES = {
+    day: { a: "#BFE3F7", b: "#EAF6FC", ground: "#D3D8E1" },
+    dusk: { a: "#5E5193", b: "#F3A47C", ground: "#8D7F95" },
+    night: { a: "#121A36", b: "#2B3964", ground: "#283150" },
+  };
+  const STARS = [[24, 14], [44, 34], [70, 12], [96, 26], [212, 16], [236, 40], [276, 58], [18, 62], [282, 112], [30, 120], [262, 150], [14, 176]];
+
   /* ---------- a course as a hotel ----------
-     spec: { code, floors: [{ n, windows: "LLD-C", href, aria, done }] from the ground floor up, label }
-     windows: L lit (you know it), D dimming (fading), C the next one, P started, - not yet. */
+     spec: { code, label, mood, sky (day | dusk | night), lights (December), floors: [{ n, windows, href,
+     aria, done, just, keys, scaffold, unscaffold }] from the ground floor up }.
+     windows: L lit (you know it), D dimming (fading), C the next one, P started, - not yet; keys: the
+     windows whose key is yours (a gold frame); scaffold: the floor needs a renovation; unscaffold: its
+     renovation just finished (the scaffolding comes down). */
   function hotel(spec) {
     const floors = spec.floors, slots = Math.max(6, ...floors.map((f) => f.windows.length));
     const x0 = 50, x1 = 256, FH = 22, top = 38, sw = (x1 - x0 - 8) / slots, ww = Math.min(13, sw * .66), wh = 13;
     const fb = top + floors.length * FH, lb = fb + 40, H = lb + 18, mid = (x0 + x1) / 2;
-    let s = `<svg class="ho-svg" viewBox="0 0 300 ${H}" role="group" aria-label="${spec.label || "The course as a hotel"}">`;
-    s += `<ellipse cx="${mid}" cy="${lb + 13}" rx="122" ry="4" fill="currentColor" opacity=".12"/>`;
+    const sky = SKIES[spec.sky] ? spec.sky : null, dark = sky === "night" || sky === "dusk";
+    let s = `<svg class="ho-svg${sky ? " sky-" + sky : ""}" viewBox="0 0 300 ${H}" role="group" aria-label="${spec.label || "The course as a hotel"}">`;
+    if (sky) {
+      const c = SKIES[sky];
+      s += `<defs><linearGradient id="hoSkyG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c.a}"/><stop offset="1" stop-color="${c.b}"/></linearGradient>` +
+        `<filter id="hoGlowF" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>`;
+      s += `<g class="ho-skybg"><rect x="4" y="0" width="292" height="${lb + 2}" rx="18" fill="url(#hoSkyG)"/>`;
+      s += `<path d="M4 ${lb - 2} H296 V${H - 6} a8 8 0 0 1 -8 8 H12 a8 8 0 0 1 -8 -8 Z" fill="${c.ground}"/>`;
+      if (sky === "day") s += `<circle cx="279" cy="20" r="15" fill="${LIT}" opacity=".3"/><circle cx="279" cy="20" r="10" fill="${LIT}"/>` +
+        [[30, 52, 1], [244, 92, .8]].map(([x, y, k]) => `<path transform="translate(${x} ${y}) scale(${k})" d="M0 8 a6 6 0 0 1 6 -8 a8 8 0 0 1 15 2 a5.5 5.5 0 0 1 3 10 H2 a4 4 0 0 1 -2 -4 Z" fill="#fff" opacity=".92"/>`).join("");
+      if (sky === "dusk") s += `<circle cx="270" cy="${lb - 26}" r="20" fill="#FFB45C" opacity=".3"/><circle cx="270" cy="${lb - 26}" r="12" fill="#FFB45C"/>` + STARS.slice(0, 4).map(([x, y]) => `<circle cx="${x}" cy="${y}" r=".9" fill="#fff" opacity=".7"/>`).join("");
+      if (sky === "night") s += moon(279, 21) + STARS.filter(([, y]) => y < lb - 10).map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i % 3 ? 1 : 1.4}" fill="#fff" opacity="${i % 2 ? .6 : .9}"/>`).join("");
+      s += `</g>`;
+    } else s += `<ellipse cx="${mid}" cy="${lb + 13}" rx="122" ry="4" fill="currentColor" opacity=".12"/>`;
     [[x0 + 16, x0 + 8], [x0 + 36, x0 + 32], [x1 - 16, x1 - 8], [x1 - 36, x1 - 32]].forEach(([a, c]) => (s += limb(`M${a} ${lb - 1} Q${(a + c) / 2 + (c < a ? -2 : 2)} ${lb + 3} ${c} ${lb + 11}`, CORAL, 4.4)));
     s += limb(`M${x0 + 2} ${fb + 26} Q${x0 - 8} ${fb + 27} ${x0 - 14} ${fb + 20}`) + claw(x0 - 18, fb + 13, 9, -60);
     s += limb(`M${x1 - 2} ${fb + 26} Q${x1 + 8} ${fb + 27} ${x1 + 14} ${fb + 19}`) + claw(x1 + 19, fb + 10, 12, -120);
@@ -108,25 +166,32 @@ const Crab = (() => {
     s += `<text x="${mid}" y="19.5" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="700" font-size="12" letter-spacing="2" fill="${LIT}">${spec.code || ""}</text>`;
     s += `<rect x="${x0}" y="${top}" width="${x1 - x0}" height="${lb - top}" rx="4" fill="${MINT}" stroke="${INK}" stroke-width="2.4"/>`;
     s += `<rect x="${x0 - 6}" y="${top - 9}" width="${x1 - x0 + 12}" height="10" rx="3" fill="${NAVY}" stroke="${INK}" stroke-width="2.4"/>`;
-    const n = floors.length;
+    const n = floors.length, glow = [];
     floors.forEach((f, k) => {
-      const y = top + (n - 1 - k) * FH, row = [...f.windows];
+      const y = top + (n - 1 - k) * FH, row = [...f.windows], keys = new Set(f.keys || []);
       let g = "";
       if (k < n - 1) g += `<path d="M${x0} ${y + FH} H${x1}" stroke="${INK}" stroke-opacity=".22" stroke-width="1.2"/>`;
       g += `<rect class="ho-hit" x="4" y="${y}" width="292" height="${FH}" rx="5"/>`;
-      g += `<text class="ho-num" x="${x0 - 9}" y="${y + 15}" text-anchor="end" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="700" font-size="10.5" fill="currentColor">${f.n}</text>`;
-      if (f.done) g += `<path d="M${x0 - 38} ${y + 11} l3 3 5.5 -6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".75"/>`;
+      // the floor's number on a plate, so it reads against any sky (green once the floor is complete)
+      g += `<rect class="ho-plate" x="${x0 - 27}" y="${y + 4}" width="20" height="14" rx="4" fill="${f.done ? "#CDEFD9" : WHITE}" stroke="${INK}" stroke-width=".9"/>`;
+      g += `<text class="ho-num" x="${x0 - 17}" y="${y + 14.4}" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="700" font-size="9.5" fill="${INK}">${f.n}</text>`;
       const start = x0 + 4 + (slots - row.length) * sw / 2;
       row.forEach((st, j) => {
-        const wx = r2(start + j * sw + (sw - ww) / 2), wy = y + 4.5;
-        g += `<rect x="${wx}" y="${wy}" width="${r2(ww)}" height="${wh}" rx="2" fill="${st === "L" ? LIT : GLASS}" stroke="${INK}" stroke-width="1.6"/>`;
+        const wx = r2(start + j * sw + (sw - ww) / 2), wy = y + 4.5, key = keys.has(j);
+        if (dark && (st === "L" || st === "D")) glow.push(`<rect x="${r2(wx - 2)}" y="${wy - 2}" width="${r2(ww + 4)}" height="${wh + 4}" rx="3" fill="${LIT}" opacity="${st === "L" ? .95 : .45}"/>`);
+        g += `<rect x="${wx}" y="${wy}" width="${r2(ww)}" height="${wh}" rx="2" fill="${st === "L" ? LIT : GLASS}" stroke="${key ? GOLD : INK}" stroke-width="${key ? 2.6 : 1.6}"/>`;
         if (st === "D") g += `<rect x="${wx}" y="${wy}" width="${r2(ww)}" height="${wh}" rx="2" fill="${LIT}" opacity=".42"/>`;
         if (st === "P") g += `<rect x="${wx}" y="${wy + wh - 4}" width="${r2(ww)}" height="4" rx="1" fill="${LIT}" opacity=".8"/>`;
+        if (key) g += `<rect x="${r2(wx + 1.3)}" y="${wy + 1.3}" width="${r2(ww - 2.6)}" height="${wh - 2.6}" rx="1.2" fill="none" stroke="${INK}" stroke-width=".7" opacity=".6"/>`;
         if (st === "C") g += `<rect class="ho-pulse" x="${r2(wx - 3)}" y="${wy - 3}" width="${r2(ww + 6)}" height="${wh + 6}" rx="4" fill="none" stroke="${CORAL}" stroke-width="2.6"/>`;
         if (j === f.just) g += `<rect class="ho-glow" x="${r2(wx - 4)}" y="${wy - 4}" width="${r2(ww + 8)}" height="${wh + 8}" rx="5" fill="${LIT}" opacity="0"/>`;   // the light that just came on
       });
+      if (f.scaffold || f.unscaffold) g += scaffold(x0, x1, y, FH, f.unscaffold);
       s += f.href ? `<a href="${f.href}" aria-label="${f.aria || "Floor " + f.n}">${g}</a>` : `<g>${g}</g>`;
     });
+    // at dusk and at night the lit windows glow (drawn under the building's windows would hide it: over, softly)
+    if (glow.length) s += `<g filter="url(#hoGlowF)" opacity=".55" pointer-events="none">${glow.join("")}</g>`;
+    if (spec.lights) s += bulbs(Array.from({ length: 11 }, (_, i) => [r2(x0 - 6 + i * (x1 - x0 + 12) / 10), top + 2]));
     // the lobby, and the crab in its door
     s += `<path d="M${x0} ${fb} H${x1}" stroke="${INK}" stroke-width="2"/>`;
     s += `<rect x="${x0 + 12}" y="${fb + 9}" width="40" height="20" rx="3" fill="${LIT}" stroke="${INK}" stroke-width="1.8"/><rect x="${x1 - 52}" y="${fb + 9}" width="40" height="20" rx="3" fill="${LIT}" stroke="${INK}" stroke-width="1.8"/>`;
@@ -135,6 +200,15 @@ const Crab = (() => {
     const mood = spec.mood || "idle";
     s += eyes([mid - 7.5, mid + 7.5], lb - 17.5, 5.4, mood === "happy" ? "happy" : "open") + mouth(mid, lb - 7, mood === "happy" ? "open" : "smile", 7);
     return s + "</svg>";
+  }
+  // scaffolding over a floor that needs a renovation (or coming down once it's done)
+  function scaffold(x0, x1, y, FH, off) {
+    const P = "#B5813A", W = "#E3B062", xs = [x0 + 4, x0 + (x1 - x0) / 3, x0 + 2 * (x1 - x0) / 3, x1 - 4].map(r2);
+    let g = `<g class="ho-scaf${off ? " off" : ""}" pointer-events="none">`;
+    for (let i = 0; i < xs.length - 1; i++) g += `<path d="M${xs[i]} ${y + FH - 3} L${xs[i + 1]} ${y + 2}" stroke="${P}" stroke-width="1.3" opacity=".8"/>`;
+    xs.forEach((x) => (g += `<path d="M${x} ${y - 3} V${y + FH + 3}" stroke="${INK}" stroke-width="3.6" stroke-linecap="round"/><path d="M${x} ${y - 3} V${y + FH + 3}" stroke="${P}" stroke-width="2" stroke-linecap="round"/>`));
+    [y - 1, y + FH - 2.6].forEach((py) => (g += `<rect x="${x0 - 5}" y="${r2(py)}" width="${x1 - x0 + 10}" height="3.4" rx="1" fill="${W}" stroke="${INK}" stroke-width=".9"/>`));
+    return g + `</g>`;
   }
 
   // a small hotel for a course tile: its floors, lit from the ground up as you learn; a coming course is
@@ -158,8 +232,13 @@ const Crab = (() => {
       (label ? `<text x="13" y="11.6" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="700" font-size="5" fill="${INK}">${label}</text>` : "") +
       `<circle cx="18.5" cy="18" r="1.7" fill="${GOLD}" stroke="${INK}" stroke-width=".8"/></svg>`;
   }
+  // a room key: brass, with its hotel tag
+  const key = (dim) => `<svg viewBox="0 0 30 22" aria-hidden="true"${dim ? ' opacity=".35"' : ""}><path d="M10 9 Q6 12 5 17" fill="none" stroke="${INK}" stroke-width="1"/>` +
+    `<path d="M5 15.5 L8.6 19 L5 22 L1.4 19 Z" fill="#8E2C3B" stroke="${INK}" stroke-width=".9" stroke-linejoin="round"/>` +
+    `<circle cx="11" cy="8" r="5.4" fill="#EDBE4E" stroke="${INK}" stroke-width="1.3"/><circle cx="11" cy="8" r="1.9" fill="${WHITE}" stroke="${INK}" stroke-width=".9"/>` +
+    `<path d="M16 6.7 H28.4 V9.3 H26.5 V12.4 H24.4 V9.3 H22.6 V11.6 H20.6 V9.3 H16 Z" fill="#EDBE4E" stroke="${INK}" stroke-width="1.1" stroke-linejoin="round"/></svg>`;
 
-  return { svg, hotel, mini, door, COLORS: { INK, CORAL, MINT, NAVY, GLASS, LIT, WHITE, GOLD } };
+    return { svg, hotel, mini, door, key, skyAt, seasonAt, COLORS: { INK, CORAL, MINT, NAVY, GLASS, LIT, WHITE, GOLD } };
 })();
 
 window.Crab = Crab;

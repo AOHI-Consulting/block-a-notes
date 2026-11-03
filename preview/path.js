@@ -63,8 +63,9 @@ const Path = (() => {
     const done = nd.flag ? Mem.flagged(course, nd.id) : total > 0 && seen === total;
     let fading = false;
     if (done && !nd.flag && total) {
-      const r = nd.items.map((id) => Mem.recall(course, id)).filter((x) => x != null);
-      fading = r.length && r.reduce((a, b) => a + b, 0) / r.length < Today.FADING;
+      // a room's light is its topic; a set of frameworks fades as a whole
+      if (nd.kind === "lesson") { const r = Mem.recall(course, nd.parts[0].t.id); fading = r != null && r < Today.FADING; }
+      else { const r = nd.items.map((id) => Mem.recall(course, id)).filter((x) => x != null); fading = r.length && r.reduce((a, b) => a + b, 0) / r.length < Today.FADING; }
     }
     return { done, seen, total, part: nd.flag ? (done ? 1 : 0) : total ? seen / total : 0, fading };
   }
@@ -325,10 +326,48 @@ const Path = (() => {
   // what is fading in a course, for a refresh
   const KINDS = new Set(["topic", "framework", "mcq"]);
   const fadingIds = (c, pk) => pk.items.filter((it) => KINDS.has(it.kind) && Mem.get(c, it.id) && Mem.recall(c, it.id) < Today.FADING).map((it) => it.id);
+  const inClass = (it, n) => String(it.class) === String(n) || (it.classes || []).map(String).includes(String(n));
+
+  /* ---------- room keys ----------
+     "Lit" means you've learnt a room; its key means you own it: you'll remember its topic for three
+     weeks or more (memory stability of 21 days or more, last answer good). It takes a few good answers
+     spread over a couple of weeks, or remembering it after a long gap. Keys stay earned: forgetting later
+     dims the window, it doesn't take the key back. Kept as marks on the path (key:<topic id>), so they sync. */
+  const KEY_DAYS = 21;
+  const holds = (c, id) => { const st = Mem.get(c, id); return !!st && st.s >= KEY_DAYS && st.g >= 3; };
+  function claimKeys(c, pk) {
+    const out = [];
+    units(pk).forEach((u) => u.nodes.forEach((nd) => {
+      if (nd.kind !== "lesson") return;
+      const id = nd.parts[0].t.id, k = "key:" + id;
+      if (Mem.flagged(c, k)) out.push(id);
+      else if (holds(c, id)) { Mem.flag(c, k); out.push(id); }
+    }));
+    return out;
+  }
+  function roomOf(pk, id) {
+    for (const u of units(pk)) for (const nd of u.nodes) if (nd.kind === "lesson" && nd.parts[0].t.id === id) return { no: roomNo(u, nd), n: u.n, title: nd.title };
+    return null;
+  }
+
+  /* ---------- renovation ----------
+     A floor with two or more dimming rooms gets scaffolding, and a renovation: a few minutes on what is
+     fading in that class. When it's done the scaffolding comes down. */
+  const RENO_AT = 2;
+  const dimOn = (c, u) => lessonsOf(u).filter((nd) => { const st = status(c, nd); return st.done && st.fading; }).length;
+  const needsReno = (c, u) => !!u.n && dimOn(c, u) >= RENO_AT;
+  const floorFading = (c, pk, n) => fadingIds(c, pk).filter((id) => inClass(itemOf(pk, id), n));
+  function renoPlan(c, pk, u) {
+    const topics = lessonsOf(u).filter((nd) => { const st = status(c, nd); return st.done && st.fading; }).map((nd) => nd.parts[0].t.id);
+    const rest = floorFading(c, pk, u.n).filter((id) => !topics.includes(id));
+    const more = Math.min(rest.length, Math.max(3, 10 - topics.length));
+    return { topics, rest, more, mins: Math.max(2, Math.round((topics.length + more) * 0.5)) };
+  }
 
   function render(w, { course, pk, justDone }) {
     const crs = pk.course, us = units(pk), floors = us.filter((u) => u.n), cur = current(course, pk), U = SK().unit(pk);
-    const run = Today.run(Mem.days(), Mem.today()), c = roomsLit(course, floors);
+    const run = Today.run(Mem.days(), Mem.today()), c = roomsLit(course, floors), keys = new Set(claimKeys(course, pk));
+    const reno = /^renovate-(\d+)$/.exec(justDone || "")?.[1];
     const head = el("section", "ho-head");
     head.append(SK().crumbs("#/study", "All courses"), el("p", "kicker", [crs.code, crs.lecturer].filter(Boolean).join(" · ")), el("h1", null, crs.full || crs.name), el("p", "ho-sum", litLine(c)));
     if (crs.note) head.append(el("p", "small st-note", crs.note));
@@ -337,29 +376,34 @@ const Path = (() => {
     // the building
     const left = el("div", "ho-left"), bld = el("div", "ho-bld");
     bld.innerHTML = Crab.hotel({
-      code: crs.code || "", mood: run.today ? "happy" : "idle",
-      label: (crs.code || crs.name) + " as a hotel: a floor per " + U.toLowerCase() + ", a window per topic. " + litLine(c) + ".",
+      code: crs.code || "", mood: run.today ? "happy" : "idle", sky: Crab.skyAt(), lights: Crab.seasonAt() === "lights",
+      label: (crs.code || crs.name) + " as a hotel: a floor per " + U.toLowerCase() + ", a window per topic. " + litLine(c) + (keys.size ? ", " + keys.size + (keys.size === 1 ? " key" : " keys") : "") + ".",
       floors: floors.map((u) => {
-        const fc = roomsLit(course, [u]), ls = lessonsOf(u), j = justDone ? ls.findIndex((nd) => nd.id === justDone) : -1;
-        return { n: u.n, windows: windowsOf(course, u, cur), href: "#/study/" + course + "/f/" + u.n, just: j,
-          done: u.nodes.every((nd) => status(course, nd).done), aria: "Floor " + u.n + ", " + U + " " + u.n + ": " + u.name + ". " + litLine(fc) };
+        const fc = roomsLit(course, [u]), ls = lessonsOf(u), j = justDone ? ls.findIndex((nd) => nd.id === justDone) : -1, rn = needsReno(course, u);
+        const ks = ls.map((nd, i) => (nd.kind === "lesson" && keys.has(nd.parts[0].t.id) ? i : -1)).filter((i) => i >= 0);
+        return { n: u.n, windows: windowsOf(course, u, cur), href: "#/study/" + course + "/f/" + u.n, just: j, keys: ks,
+          scaffold: rn, unscaffold: !rn && reno === String(u.n), done: u.nodes.every((nd) => status(course, nd).done),
+          aria: "Floor " + u.n + ", " + U + " " + u.n + ": " + u.name + ". " + litLine(fc) + (rn ? ". Scaffolding up: it needs a renovation" : "") };
       }),
     });
     const key = el("div", "ho-key");
-    [["lit", "you know it"], ["dim", "dimming"], ["dark", "not yet"]].forEach(([k, t]) => { const s = el("span", k); s.append(el("i"), document.createTextNode(t)); key.append(s); });
+    [["lit", "you know it"], ["dim", "dimming"], ["dark", "not yet"], ...(keys.size ? [["gold", "your key"]] : [])].forEach(([k, t]) => { const s = el("span", k); s.append(el("i"), document.createTextNode(t)); key.append(s); });
     left.append(bld, key, el("p", "small ho-tap", "Tap a floor to walk in."));
     page.append(left);
     // what to do next, and the floors
     const side = el("div", "ho-side");
     side.append(nextCard(course, pk, cur));
     const acts = el("div", "ho-acts"), fade = fadingIds(course, pk).length, mixes = mixList(course, pk).length, miss = mistakes(course, pk).length;
-    if (fade) acts.append(act("Refresh " + fade, "#/study/" + course + "/l/refresh", "gold", "sun", fade + " fading: a few minutes brings them back"));
+    const renos = floors.filter((u) => needsReno(course, u)).sort((a, b) => dimOn(course, b) - dimOn(course, a));
+    if (renos.length) acts.append(act("Renovate floor " + renos[0].n, "#/study/" + course + "/l/renovate-" + renos[0].n, "gold", "wrench", dimOn(course, renos[0]) + " rooms dimming on floor " + renos[0].n + ": a few minutes brings them back"));
+    else if (fade) acts.append(act("Refresh " + fade, "#/study/" + course + "/l/refresh", "gold", "sun", fade + " fading: a few minutes brings them back"));
     if (mixes) acts.append(act(mixes === 1 ? "1 mix-up" : mixes + " mix-ups", "#/study/" + course + "/l/mixups", "coral", "swap", "Ideas you keep confusing: tell them apart"));
     if (miss) acts.append(act("Your mistakes " + miss, "#/study/" + course + "/l/mistakes", "plain", "reset", "What you last got wrong: one more go"));
     if (acts.children.length) side.append(acts);
+    side.append(keyRing(keys, c.rooms));
     const list = el("section", "ho-floors");
     list.append(el("h2", "ho-h", "Floors"));
-    floors.forEach((u) => list.append(floorRow(course, pk, u)));
+    floors.forEach((u) => list.append(floorRow(course, pk, u, keys)));
     const gen = us.find((u) => !u.n);
     if (gen) { const a = el("a", "ho-floor lib"); a.href = "#/study/" + course + "/f/0"; const m = el("span", "ho-fn"); m.append(K().icon("layers")); const t = el("span", "ho-ft"); t.append(el("b", null, "The library"), el("small", null, gen.name)); a.append(m, t, K().icon("next")); list.append(a); }
     side.append(list);
@@ -397,16 +441,34 @@ const Path = (() => {
     box.append(SK().link((st.seen ? "Carry on" : "Start") + " · " + minutes(cur) + " min", "#/study/" + course + "/l/" + cur.id, "primary ho-go", "play"));
     return box;
   }
-  function floorRow(course, pk, u) {
+  function floorRow(course, pk, u, keys) {
     const a = el("a", "ho-floor"), fc = roomsLit(course, [u]), done = u.nodes.every((nd) => status(course, nd).done), started = u.nodes.some((nd) => status(course, nd).seen);
     a.href = "#/study/" + course + "/f/" + u.n;
     a.style.setProperty("--cc", SK().color(u.n, pk));
     const n = el("span", "ho-fn", String(u.n)), t = el("span", "ho-ft");
-    t.append(el("b", null, u.name), el("small", null, done ? (fc.dim ? "Complete · " + fc.dim + " dimming" : "Complete") : started ? litLine(fc) : fc.rooms + (fc.rooms === 1 ? " room" : " rooms") + " · not started"));
+    const nk = lessonsOf(u).filter((nd) => nd.kind === "lesson" && keys.has(nd.parts[0].t.id)).length;
+    const line = needsReno(course, u) ? "Scaffolding up · " + fc.dim + " rooms dimming"
+      : (done ? (fc.dim ? "Complete · " + fc.dim + " dimming" : "Complete") : started ? litLine(fc) : fc.rooms + (fc.rooms === 1 ? " room" : " rooms") + " · not started") + (nk ? " · " + nk + (nk === 1 ? " key" : " keys") : "");
+    t.append(el("b", null, u.name), el("small", needsReno(course, u) ? "reno" : null, line));
     a.append(n, t);
     if (done) { const b = el("span", "ho-done"); b.append(K().icon("check")); a.append(b); }
     a.append(K().icon("next"));
     return a;
+  }
+
+  // your keys: the rooms you own
+  function keyRing(keys, rooms) {
+    const box = el("div", "ho-ring"), row = el("div", "ho-ringk"), t = el("div", "ho-ringt");
+    if (keys.size) {
+      for (let i = 0; i < Math.min(keys.size, 12); i++) { const k = el("span"); k.innerHTML = Crab.key(); row.append(k); }
+      if (keys.size > 12) row.append(el("b", null, "+" + (keys.size - 12)));
+      t.append(el("p", "kicker", "Your keys · " + keys.size + " of " + rooms), el("p", "small", "Rooms you'll remember for three weeks or more. They're yours."));
+    } else {
+      const k = el("span"); k.innerHTML = Crab.key(true); row.append(k);
+      t.append(el("p", "kicker", "Your keys"), el("p", "small", "Get a room to stick for three weeks and its key is yours: a few good answers, spread over time."));
+    }
+    box.append(row, t);
+    return box;
   }
 
   // one floor: its rooms in order, as doors
@@ -424,6 +486,14 @@ const Path = (() => {
     if (u.n) row.append(SK().link("Class notes", "#/study/" + course + "/c" + u.n, "small ghost", "book"));
     head.append(row);
     w.append(head);
+    if (needsReno(course, u)) {
+      const bn = el("div", "panel ho-reno"), ic = el("span", "ho-renoic"), t = el("div", "ho-renot");
+      ic.innerHTML = '<svg viewBox="0 0 40 30" aria-hidden="true"><path d="M5 2 V28 M20 2 V28 M35 2 V28" stroke="#2B1B17" stroke-width="3.6" stroke-linecap="round"/><path d="M5 2 V28 M20 2 V28 M35 2 V28" stroke="#B5813A" stroke-width="2" stroke-linecap="round"/><path d="M5 24 L20 6 M20 24 L35 6" stroke="#B5813A" stroke-width="1.4"/><rect x="1" y="5" width="38" height="3.6" rx="1" fill="#E3B062" stroke="#2B1B17" stroke-width=".9"/><rect x="1" y="21" width="38" height="3.6" rx="1" fill="#E3B062" stroke="#2B1B17" stroke-width=".9"/></svg>';
+      t.append(el("b", null, "Scaffolding's up: " + dimOn(course, u) + " rooms here are dimming"), el("span", "small", "A short renovation brings them back. The scaffolding comes down when you're done."));
+      bn.append(ic, t, SK().link("Renovate · " + renoPlan(course, pk, u).mins + " min", "#/study/" + course + "/l/renovate-" + u.n, "primary ho-go", "wrench"));
+      w.append(bn);
+    }
+    const keys = new Set(claimKeys(course, pk));
     const ol = el("ol", "ho-doors");
     u.nodes.forEach((nd) => {
       const st = status(course, nd), isCur = cur && cur.id === nd.id;
@@ -436,8 +506,10 @@ const Path = (() => {
       a.append(ic, t);
       const applied = nd.kind === "lesson" && Mem.caseGet(course, nd.parts[0].t.id)?.text?.trim();
       if (applied) { const p = el("span", "ho-pen"); p.title = "In your case notebook"; p.append(K().icon("pen")); a.append(p); }
+      const owned = nd.kind === "lesson" && keys.has(nd.parts[0].t.id);
+      if (owned) { const k = el("span", "ho-keyic"); k.title = "Your key: you'll remember it for three weeks or more"; k.innerHTML = Crab.key(); a.append(k); }
       if (isCur) a.append(el("span", "ho-pill", st.seen ? "Carry on" : "Start"));
-      else a.append(el("span", "ho-st " + ds, st.done ? (st.fading ? "refresh" : nd.flag ? "done" : "lit") : st.part > 0 && !nd.flag ? st.seen + " of " + st.total : minutes(nd) + " min"));
+      else a.append(el("span", "ho-st " + (owned && !st.fading ? "key" : ds), st.done ? (st.fading ? "refresh" : owned ? "yours" : nd.flag ? "done" : "lit") : st.part > 0 && !nd.flag ? st.seen + " of " + st.total : minutes(nd) + " min"));
       a.setAttribute("aria-label", whereIn(u, nd) + ": " + nodeTitle(pk, nd) + (isCur ? ", up next" : st.done ? (st.fading ? ", fading" : ", done") : ""));
       li.append(a); ol.append(li);
     });
@@ -508,6 +580,20 @@ const Path = (() => {
       done() { location.replace(home); }, exit() { location.replace(home); },
     });
   }
+  // a floor's renovation: what is fading in that class, brought back; then the scaffolding comes down
+  function playRenovate(w, course, pk, home, n) {
+    const u = units(pk).find((x) => x.n === n), plan = u && renoPlan(course, pk, u);
+    if (!plan || !(plan.topics.length + plan.rest.length)) { location.replace(u ? home + "/f/" + n : home); return; }
+    const steps = spread([...plan.topics.map((id) => topicCheck(course, pk, itemOf(pk, id))), ...(plan.more ? practiceSteps(course, pk, plan.rest, plan.more) : [])].filter(Boolean));
+    Lesson.play(w, {
+      color: "var(--gold)", steps, title: "Floor " + n + " renovated!",
+      end(box) {
+        const left = dimOn(course, u);
+        box.append(el("p", "ls-runnote", left >= RENO_AT ? left + " rooms still dimming: they come back in your daily session." : "The scaffolding comes down: “" + u.name + "” is lit again."));
+      },
+      done() { Study.justDone("renovate-" + n); location.replace(home); }, exit() { location.replace(home); },
+    });
+  }
   // what is fading in the course, brought back
   function playRefresh(w, course, pk, home) {
     const ids = fadingIds(course, pk);
@@ -543,6 +629,8 @@ const Path = (() => {
     if (id === "mistakes") return playMistakes(w, course, pk, home);
     if (id === "mixups") return playMixups(w, course, pk, home);
     if (id === "refresh") return playRefresh(w, course, pk, home);
+    const rn = /^renovate-(\d+)$/.exec(id);
+    if (rn) return playRenovate(w, course, pk, home, +rn[1]);
     const nd = allNodes(pk).find((x) => x.id === id);
     if (!nd) { location.replace(home); return; }
     const st = status(course, nd), again = st.done && !nd.flag;
@@ -593,7 +681,7 @@ const Path = (() => {
   }
 
   return { render, renderFloor, play, units, status, current, stepsFor, practiceSteps, teachSteps, topicCheck, sceneEx, clozeEx, matchEx, typeEx, parts, sentences, mistakes,
-           mixList, mixSteps, settle, settledLines, applyOf, hotelOf, short, litLine,
+           mixList, mixSteps, settle, settledLines, applyOf, hotelOf, short, litLine, claimKeys, roomOf, KEY_DAYS,
            lit: (c, pk) => roomsLit(c, units(pk).filter((u) => u.n)) };
 })();
 
