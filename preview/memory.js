@@ -137,7 +137,7 @@ const Mem = (() => {
     const k = course + ":" + id, b = load("mem:case"), old = b.items[k] || {};
     const nx = { ...old, ...v };
     if (typeof nx.text === "string") nx.text = nx.text.slice(0, CASE_MAX);
-    const same = (o) => JSON.stringify({ text: o.text || "", ticks: o.ticks || [] });
+    const same = (o) => JSON.stringify({ text: o.text || "", ticks: o.ticks || [], sent: !!o.sent });   // sent: a reply to the GM
     if (old.t && same(old) === same(nx)) return;
     nx.t = Math.max(t, (old.t || 0) + 1e-3); nx.n = (old.n || 0) + 1;
     b.items[k] = nx; b.at = t; save("mem:case", b); later();

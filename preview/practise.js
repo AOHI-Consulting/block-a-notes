@@ -31,6 +31,7 @@ const Practise = (() => {
     arrow: "M5 12h14M13 6l6 6-6 6", play: "M8 5v14l11-7z", reset: "M4 12a8 8 0 1 0 2.3-5.7M4 4v4h4",
     expand: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5", shrink: "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5", plus: "M12 5v14M5 12h14", minus: "M5 12h14",
     pen: "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16zM13.5 6.5l4 4",
+    mail: "M3.5 6h17v12h-17zM3.5 6.5l8.5 6.5 8.5-6.5",
     trophy: "M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3",
     layers: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5", bolt: "M13 2L4 14h7l-1 8 9-12h-7z", swap: "M4 8h15l-4-4M20 16H5l4 4", wrench: "M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z",
     speaker: "M4 9v6h4l5 4V5L8 9zM16.5 9a4.5 4.5 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11", mute: "M4 9v6h4l5 4V5L8 9zM17 9.5l5 5M22 9.5l-5 5",

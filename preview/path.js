@@ -433,6 +433,8 @@ const Path = (() => {
     const rf = renoFloor(course, pk);
     if (rf) acts.append(act("Renovate floor " + rf.n, "#/study/" + course + "/l/renovate-" + rf.n, "gold", "wrench", dimOn(course, rf) + " rooms dimming on floor " + rf.n + ": a few minutes brings them back"));
     else if (fade) acts.append(act("Refresh · " + refreshMins(fade) + " min", "#/study/" + course + "/l/refresh", "gold", "sun", "Some of what you learnt is fading: a few minutes brings it back"));
+    const letter = Inbox.deliver(course, pk);
+    if (letter) acts.append(act("A message from the GM", "#/study/" + course + "/inbox", "acc", "mail", "“" + letter.title + "”: your rooms can help"));
     if (mixes) acts.append(act(mixes === 1 ? "1 mix-up" : mixes + " mix-ups", "#/study/" + course + "/l/mixups", "coral", "swap", "Ideas you keep confusing: tell them apart"));
     if (miss) acts.append(act("Your mistakes " + miss, "#/study/" + course + "/l/mistakes", "plain", "reset", "What you last got wrong: one more go"));
     if (acts.children.length) side.append(acts);
@@ -452,6 +454,7 @@ const Path = (() => {
     const more = el("div", "ho-more");
     const nb = Mem.caseAll(course).length;
     more.append(SK().link("Case notebook" + (nb ? " · " + nb : ""), "#/study/" + course + "/case", "small", "pen"), SK().link("Your index", "#/study/" + course + "/index", "small", "search"));
+    if (Inbox.has(pk)) more.append(SK().link("The GM's inbox", "#/study/" + course + "/inbox", "small", "mail"));
     if (pk.frameworks.length) more.append(SK().link("Framework flashcards", "#/study/" + course + "/cards", "small", "layers"));
     side.append(more);
     const tt = SK().timetable(meta, pk); if (tt) side.append(tt);
@@ -705,6 +708,8 @@ const Path = (() => {
     if (rn) return playRenovate(w, course, pk, home, +rn[1]);
     const wu = /^warmup-(\d+)$/.exec(id);
     if (wu) return playWarmup(w, course, pk, home, +wu[1]);
+    const gm = /^gm-(.+)$/.exec(id);
+    if (gm) return Inbox.play(w, course, pk, home, gm[1]);
     const nd = allNodes(pk).find((x) => x.id === id);
     if (!nd) { location.replace(home); return; }
     const st = status(course, nd), again = st.done && !nd.flag;

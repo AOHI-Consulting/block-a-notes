@@ -392,6 +392,7 @@ const Study = (() => {
     else if (rest[0] === "l" && rest[1]) Path.play(w, ctx, rest[1]);
     else if (rest[0] === "f" && rest[1] != null) Path.renderFloor(w, ctx, rest[1]);
     else if (rest[0] === "case") renderCase(w);
+    else if (rest[0] === "inbox" && Inbox.has(T.data)) Inbox.render(w, ctx);
     else if (rest[0] === "index") renderIndex(w);
     else if (m && T.data.classes[m[1]]) { store.set("study:last", [course.id, ...rest].join("/")); renderClass(w, +m[1], rest.slice(1)); }
     else {
@@ -668,7 +669,7 @@ const Study = (() => {
     const topics = pk.items.filter((it) => it.kind === "topic"), byId = Object.fromEntries(topics.map((it) => [it.id, it]));
     const done = Mem.caseAll(c).filter((e) => byId[e.id]);
     const tools = el("div", "btns cn-tools");
-    if (done.length) {
+    if (done.length || Inbox.sent(c, pk).length) {
       const copy = K().button("Copy it all as text", "small", async () => {
         const text = asText(c, pk, done, byId);
         try { await navigator.clipboard.writeText(text); copy.lastChild.textContent = "Copied"; }
@@ -689,6 +690,19 @@ const Study = (() => {
       mine.forEach((e) => s.append(caseEntry(c, pk, byId[e.id], e)));
       page.append(s);
     });
+    // your replies to the GM
+    const sent = Inbox.sent(c, pk);
+    if (sent.length) {
+      const s = el("section", "cn-sec");
+      s.append(el("h2", "cn-h", "Replies to the GM"));
+      sent.forEach(({ m, r }) => {
+        const a = el("article", "panel cn-entry");
+        a.append(el("h3", null, m.title), el("p", "cn-text", r.text), el("p", "small", (r.ticks || []).length + " of " + m.points.length + " key points covered"));
+        const b = el("div", "btns"); b.append(link("Open in the inbox", "#/study/" + c + "/inbox", "small ghost", "mail")); a.append(b);
+        s.append(a);
+      });
+      page.append(s);
+    }
     // what you've learnt and could apply
     const open = topics.filter((it) => Mem.get(c, it.id) && !done.some((e) => e.id === it.id));
     if (open.length) {
@@ -703,7 +717,7 @@ const Study = (() => {
       });
       s.append(ul); page.append(s);
     }
-    if (!done.length && !open.length) page.append(el("p", "panel cn-empty", "Learn a topic first. At the end of each new topic's lesson you can apply it to your hotel, and it lands here."));
+    if (!done.length && !open.length && !sent.length) page.append(el("p", "panel cn-empty", "Learn a topic first. At the end of each new topic's lesson you can apply it to your hotel, and it lands here."));
     w.append(page);
     syncLine(w);
   }
@@ -766,6 +780,11 @@ const Study = (() => {
       out.push(unit(pk) + " " + n + " · " + pk.classes[n].name);
       mine.forEach((e) => out.push("• " + byId[e.id].title, ...e.text.trim().split("\n").map((l) => "  " + l), ""));
     });
+    const sent = Inbox.sent(c, pk);
+    if (sent.length) {
+      out.push("Replies to the GM");
+      sent.forEach(({ m, r }) => out.push("• " + m.title, ...r.text.trim().split("\n").map((l) => "  " + l), ""));
+    }
     return out.join("\n").trim() + "\n";
   }
 
@@ -1220,6 +1239,16 @@ const Study = (() => {
       const b = el("div", "btns");
       b.append(K().button("Start", "primary td-start", () => K().go("study/today"), "play"));
       body.append(b);
+    }
+    // a message from the GM, if one is waiting in a course of your mix (one at most; "Not today" hides it till tomorrow)
+    const gm = store.get("study:gm:later") === Mem.today() ? null : list.map(({ id, pack: pk }) => ({ id, pk, m: Inbox.deliver(id, pk) })).find((x) => x.m);
+    if (gm) {
+      const row = el("div", "td-gm"), t = el("div", "td-ct"), ic = el("i"); ic.append(K().icon("mail"));
+      t.append(el("b", null, "A message from the GM" + (list.length > 1 ? " · " + (gm.pk.course.code || gm.pk.course.name) : "")), el("span", "small", "“" + gm.m.title + "”"));
+      const go = el("div", "td-gmgo");
+      go.append(link("Read it · 5 min", "#/study/" + gm.id + "/l/gm-" + gm.m.id, "small", "arrow", true), K().textBtn("Not today", () => { store.set("study:gm:later", Mem.today()); fillToday(box, list, load); }));
+      row.append(ic, t, go);
+      body.append(row);
     }
     const mr = mixRow(load); if (mr) body.append(mr);
     box.append(top, greet, body);

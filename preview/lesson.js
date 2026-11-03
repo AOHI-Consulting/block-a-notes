@@ -774,6 +774,104 @@ const Lesson = (() => {
       return { el: a };
     },
 
+    /* ---------- the GM's inbox (inbox.js): the message, the rooms that help, your reply ---------- */
+    mail(ex) {
+      const a = card("ls-mail");
+      a.append(kick(ex, "A message from the GM"), Inbox.letter(ex.course, ex.pk, ex.gm));
+      footContinue("Write a reply", next, "Which of your rooms would help?");
+      return { el: a };
+    },
+    // which of your lit rooms help here? one or more; not graded, a wrong pick next to a missed one is a mix-up
+    rooms(ex) {
+      const a = card("ls-rooms"), m = ex.gm, right = new Set(m.rooms), picked = new Set();
+      let locked = false;
+      a.append(kick(ex, "Your reply · step 1 of 2"), el("h2", "ls-q", "Which of your rooms help here?"),
+        el("p", "ls-guessline", "Pick one or more: rooms you've lit. “" + m.title + "”"));
+      const opts = el("div", "ls-opts ls-multi");
+      const bs = ex.options.map((id, i) => {
+        const it = ex.pk.items.find((x) => x.id === id), rm = Path.roomOf(ex.pk, id);
+        const b = el("button", "ls-opt"); b.type = "button"; b.setAttribute("aria-pressed", "false");
+        b.style.setProperty("--rc", SK().color(it.class, ex.pk));
+        const t = el("span", "ls-ot"); t.append(el("small", "ls-room", rm ? "Room " + rm.no : SK().unit(ex.pk) + " " + it.class), document.createTextNode(it.title));
+        b.append(el("span", "ls-key ls-tick", String(i + 1)), t);
+        b.addEventListener("click", () => toggle(i));
+        opts.append(b); return { b, id, it };
+      });
+      a.append(opts);
+      const ready = footCheck(check, skip);
+      function toggle(i) {
+        if (locked) return;
+        const { b, id } = bs[i];
+        if (picked.has(id)) picked.delete(id); else picked.add(id);
+        b.setAttribute("aria-pressed", String(picked.has(id))); tone("tap"); ready(picked.size > 0);
+      }
+      function show(skipped) {
+        locked = true;
+        bs.forEach(({ b, id }) => { b.disabled = true; if (right.has(id)) b.classList.add(picked.has(id) || skipped ? "right" : "missed"); else if (picked.has(id)) b.classList.add("wrong"); });
+        const hit = [...picked].filter((id) => right.has(id)).length, wrong = [...picked].filter((id) => !right.has(id));
+        const missed = m.rooms.filter((id) => !picked.has(id));
+        if (!skipped && wrong.length === 1 && missed.length === 1) Mem.slip(ex.course, missed[0], wrong[0]);   // one taken for the other
+        Mem.tick(); R.log.push({ ex, g: null });
+        const body = el("div", "ls-fbody");
+        body.append(el("p", "ls-fbl", m.rooms.length === 1 ? "The room that helps:" : "The rooms that help:"));
+        const ul = el("ul", "ls-roomlist");
+        m.rooms.forEach((id) => { const it = ex.pk.items.find((x) => x.id === id), rm = Path.roomOf(ex.pk, id); ul.append(el("li", null, (rm ? "Room " + rm.no + ", " : "") + it.title)); });
+        body.append(ul, el("p", "ls-why", "Keep them in mind for your reply."));
+        const all = !skipped && hit === right.size && !wrong.length;
+        feedback(all, body, skipped ? "These help here" : all ? "Right rooms" : hit ? "Partly: " + hit + " of " + right.size : "Other rooms help here");
+      }
+      function check() { if (!locked && picked.size) show(false); }
+      function skip() { if (!locked) show(true); }
+      return {
+        el: a, focus: bs[0]?.b,
+        key(e) { if (/^[1-9]$/.test(e.key) && bs[+e.key - 1]) { toggle(+e.key - 1); return; } return false; },
+      };
+    },
+    // write your reply, then compare it with the key points and tick what you covered; it goes in your case notebook
+    reply(ex) {
+      const a = card("ls-reply"), m = ex.gm, c = ex.course, old = Mem.caseGet(c, "gm:" + m.id) || {};
+      const ticks = new Set(old.ticks || []);
+      a.append(kick(ex, "Your reply · step 2 of 2"), el("h2", "ls-q", "Re: " + m.title));
+      const msg = el("details", "ls-gmmsg"); msg.append(el("summary", null, "The GM's message"), Inbox.letter(c, ex.pk, m, { small: true }));
+      a.append(msg);
+      if (!Path.hotelOf(c)) {
+        const hl = el("label", "ap-hotel"), hin = el("input");
+        hin.type = "text"; hin.maxLength = 80; hin.autocomplete = "off"; hin.placeholder = "Your workplace, the case company, a hotel you know";
+        hl.append(el("span", "kicker", "Your hotel (optional)"), hin);
+        hin.addEventListener("input", () => Mem.caseSet(c, "_hotel", { text: hin.value.trim() }));
+        a.append(hl);
+      }
+      const ta = el("textarea", "ls-write"); ta.rows = 5; ta.maxLength = Mem.CASE_MAX; ta.value = old.text || "";
+      ta.placeholder = "A few lines: what's going on, and what you'd do. Use the ideas from those rooms.";
+      ta.setAttribute("aria-label", "Your reply to the GM");
+      let tm = null;
+      const save = (more = {}) => { clearTimeout(tm); if (!ta.value.trim() && !old.text) return; Mem.caseSet(c, "gm:" + m.id, { text: ta.value, ticks: [...ticks], ...more }); };
+      ta.addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(save, 400); });
+      ta.addEventListener("blur", () => save());
+      a.append(ta);
+      const ans = el("div", "ls-ans"); ans.hidden = true;
+      ans.append(el("p", "kicker", "What a good reply covers"));
+      const ol = el("ol", "st-points");
+      m.points.forEach((p, k) => {
+        const lab = el("label"), cb = el("input"); cb.type = "checkbox"; cb.checked = ticks.has(k);
+        cb.addEventListener("change", () => { if (cb.checked) ticks.add(k); else ticks.delete(k); save(); hint(); });
+        lab.append(cb, rich("span", null, p));
+        const li = el("li"); li.append(lab); ol.append(li);
+      });
+      ans.append(ol);
+      const refs = K().sourcesLine(m.refs, !!ex.pk.course.slides); if (refs) ans.append(refs);
+      ans.append(el("p", "small", "One good reply, not the only one. A different route that's well argued counts too."));
+      a.append(ans);
+      const send = () => { save({ sent: true }); Mem.tick(); R.log.push({ ex, g: null }); next(); };
+      function hint() { const h = R.foot.querySelector(".ls-hint"); if (h) h.textContent = ticks.size ? "You covered " + ticks.size + " of " + m.points.length + "." : "Tick what your reply covered."; }
+      footContinue("Compare with the key points", () => {
+        save(); ans.hidden = false; ans.classList.add("ls-in");
+        footContinue("Send to the GM", send, "Tick what your reply covered."); hint();
+        ans.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+      return { el: a, focus: ta };
+    },
+
     // an open question: write your answer, see the key points, tick what you covered, mark yourself
     explain(ex) {
       const q = ex.it, a = card("ls-explain"), key = ex.course === "ldd" ? "explain" : "explain:" + ex.course;
