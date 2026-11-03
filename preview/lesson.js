@@ -399,7 +399,7 @@ const Lesson = (() => {
           sum.append(document.createTextNode("Our notes for this topic"));
           nd.append(sum, SK().notesDoc(it.notes, n, links)); a.append(nd);
         }
-      } else a.append(el("p", "ls-gist", it.gist), SK().whereLine(pk, it), SK().noteBox(ex.course, it.id));
+      } else a.append(VText.el("p", "ls-gist", it.gist), SK().whereLine(pk, it), SK().noteBox(ex.course, it.id));
       footContinue("Continue", () => { Mem.tick(); R.log.push({ ex, g: null }); next(); }, it.kind === "topic" ? "You'll use it in a moment." : "");
       return { el: a };
     },
@@ -414,7 +414,7 @@ const Lesson = (() => {
       else a.append(el("p", "ls-sub ls-topic", it.title));
       if (ex.part === "plain") {
         if (ex.n > 1) { const d = el("div", "ls-dots"); for (let i = 0; i < ex.n; i++) d.append(el("i", i <= ex.k ? "on" : null)); a.append(d); }
-        a.append(rich("p", "ls-text", ex.text));
+        a.append(VText.el("p", "ls-text", ex.text));
       } else if (ex.part === "hotel") a.append(SK().sec("hotel", "Picture it in a hotel", "", ex.text));
       else if (ex.part === "mixup") a.append(SK().sec("mix", "Easy to mix up", "", ex.text));
       if (ex.last) {
@@ -726,7 +726,7 @@ const Lesson = (() => {
         if (end && text) { ex.spoke = true; window.Awards?.mark?.("spoke"); }
       })) a.append(mb, heard);
       const back = el("div", "ls-ans"); back.hidden = true;
-      if (x) back.append(rich("p", null, x.ask.a)); else if (it.notes) back.append(SK().notesDoc(it.notes, it.class, links));
+      if (x) back.append(VText.el("p", null, x.ask.a)); else if (it.notes) back.append(SK().notesDoc(it.notes, it.class, links));
       const refs = K().sourcesLine(x?.refs || it.refs, links); if (refs) back.append(refs);
       const mine = SK().noteShow(ex.course, it.id); if (mine) back.append(mine);
       a.append(back);
@@ -740,7 +740,7 @@ const Lesson = (() => {
       const it = ex.it, a = card("ls-flash");
       a.append(kick(ex, "Flashcard"), el("h2", "ls-title", it.title), el("p", "ls-lede", "What is it, and when would you use it for a hotel?"));
       const back = el("div", "ls-ans"); back.hidden = true;
-      back.append(el("p", "ls-gist", it.gist), SK().whereLine(ex.pk, it));
+      back.append(VText.el("p", "ls-gist", it.gist), SK().whereLine(ex.pk, it));
       const mine = SK().noteShow(ex.course, it.id); if (mine) back.append(mine);
       a.append(back);
       footContinue("Turn the card", () => { back.hidden = false; back.classList.add("ls-in"); footGrade((g) => { grade(ex, g); tone(g >= 3 ? "ok" : "no"); streak(g >= 3); next(); }); });
@@ -766,7 +766,7 @@ const Lesson = (() => {
         if (k >= seq.length) return next();
         const s = seq[k++]; ex.sub.i = k; progress();
         if (s.p) {
-          const p = rich("p", "ls-para ls-in", s.p);
+          const p = VText.el("p", "ls-para ls-in", s.p);
           flow.append(p);
           if (k > 1) p.scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" });
           footContinue(k >= seq.length ? "Finish the story" : "Continue", step);
@@ -819,7 +819,7 @@ const Lesson = (() => {
       [[ex.a, ex.ga, "a", "A"], [ex.b, ex.gb, "b", "B"]].forEach(([it, g, cls, L]) => {
         const d = el("div", "ls-vsx " + cls), h = el("p", "ls-vsh");
         h.append(el("span", "ls-vsl", L), document.createTextNode(it.title));
-        d.append(h, el("p", "ls-vsg", g));
+        d.append(h, VText.el("p", "ls-vsg", g));
         const refs = K().sourcesLine(it.x?.refs || it.refs, links); if (refs) d.append(refs);
         vs.append(d);
       });

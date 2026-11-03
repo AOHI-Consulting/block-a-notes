@@ -629,6 +629,25 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 .td-mix button[aria-pressed="true"] { border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, var(--panel)); color: var(--ink); }
 .td-mix button svg { width: 12px; height: 12px; }
 .td-mixline { margin: 6px 0 0; }
+/* visual text (vtext.js): key terms swept with a highlighter, lists as chips, mnemonics as big letters */
+.vt .kt { font-weight: 700; padding: 0 2px; border-radius: 3px; background: linear-gradient(transparent 56%, color-mix(in srgb, var(--cc, var(--accent)) 32%, transparent) 0) no-repeat; background-size: 100% 100%; animation: vt-sweep .75s cubic-bezier(.3, .7, .3, 1) both; animation-delay: calc(var(--i, 0) * 120ms + 250ms); }
+@keyframes vt-sweep { from { background-size: 0% 100%; } }
+.vt .fig { font-family: var(--mono); font-weight: 600; font-size: .9em; padding: 0 4px; border-radius: 5px; background: color-mix(in srgb, var(--gold) 11%, transparent); color: var(--ink); white-space: nowrap; }
+.vl { display: flex; flex-wrap: wrap; align-items: center; gap: 7px 6px; margin: 8px 0 10px; }
+.vg { display: inline-flex; align-items: center; gap: 6px; }
+.vi { display: inline-flex; align-items: center; gap: 6px; padding: 2px 11px; border-radius: 999px; font-size: .92em; line-height: 1.55; background: color-mix(in srgb, var(--cc, var(--accent)) 10%, var(--panel)); border: 1.5px solid color-mix(in srgb, var(--cc, var(--accent)) 38%, transparent); animation: vt-pop .5s cubic-bezier(.3, 1.45, .5, 1) both; animation-delay: calc(var(--i, 0) * 120ms + 250ms); }
+.vi .kt { background: none; padding: 0; animation: none; }
+@keyframes vt-pop { from { opacity: 0; transform: translateY(7px) scale(.88); } }
+.vl-num { font: 700 .72em/1 var(--mono); font-style: normal; width: 1.7em; height: 1.7em; border-radius: 50%; display: inline-grid; place-items: center; background: var(--cc, var(--accent)); color: #fff; flex: none; }
+.vl-arrow { color: color-mix(in srgb, var(--cc, var(--accent)) 70%, var(--muted)); font-weight: 700; animation: vt-pop .5s both; animation-delay: calc(var(--i, 0) * 120ms + 190ms); }
+.vl-acro { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
+.vl-acro .vi { position: relative; flex-direction: column; gap: 3px; border-radius: 14px; padding: 9px 10px 7px; min-width: 66px; text-align: center; }
+.va-n { position: absolute; top: 4px; left: 6px; font: 700 10px/1 var(--mono); font-style: normal; color: color-mix(in srgb, var(--cc, var(--accent)) 75%, var(--muted)); }
+.va-l { font: 800 2em/1 var(--sans); color: var(--cc, var(--accent)); letter-spacing: -.02em; }
+.va-w { font-size: .78em; line-height: 1.25; color: var(--ink-2); }
+.va-w u { text-decoration: none; font-weight: 800; color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { .vt .kt, .vi, .vl-arrow { animation: none; } }
+@media print { .vt .kt, .vi { animation: none; } }
 /* plaques and stars (awards.js) */
 .aw-page { display: grid; gap: 22px; max-width: 900px; }
 .aw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 8px; }
@@ -1524,20 +1543,21 @@ body.ls-open .page { padding-top: 0; padding-bottom: 0; }
 </main>
 
 <footer>Only people with the invitation link can open this page.</footer>
-<script src="notes.js?v=34"></script>
-<script src="mascot.js?v=34"></script>
-<script src="memory.js?v=34"></script>
-<script src="today.js?v=34"></script>
-<script src="study.js?v=34"></script>
-<script src="lesson.js?v=34"></script>
-<script src="path.js?v=34"></script>
-<script src="inbox.js?v=34"></script>
-<script src="awards.js?v=34"></script>
+<script src="notes.js?v=35"></script>
+<script src="mascot.js?v=35"></script>
+<script src="memory.js?v=35"></script>
+<script src="today.js?v=35"></script>
+<script src="study.js?v=35"></script>
+<script src="lesson.js?v=35"></script>
+<script src="path.js?v=35"></script>
+<script src="inbox.js?v=35"></script>
+<script src="vtext.js?v=35"></script>
+<script src="awards.js?v=35"></script>
 <script>
 /* works offline once opened, and can go on the home screen (sw.js, manifest.webmanifest) */
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); window.installPrompt = e; });
 </script>
-<script src="practise.js?v=34"></script>
+<script src="practise.js?v=35"></script>
 </body>
 </html>

@@ -133,7 +133,7 @@ const Study = (() => {
     const s = el("section", "st-sec " + cls), h = el("h3");
     if (ic) h.append(K().icon(ic));
     h.append(document.createTextNode(title));
-    s.append(h, rich("p", null, text));
+    s.append(h, VText.el("p", null, text));   // key terms, lists and figures drawn
     return s;
   }
   function crumbs(href, text) {
