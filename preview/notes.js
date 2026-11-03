@@ -64,10 +64,10 @@ function upmsg(t, warn) { const m = $("#upmsg"); m.textContent = t; m.classList.
 /* ---------- tabs (the router in practise.js decides which one shows) ---------- */
 function showTab(tab) {
   const was = S.tab;
-  S.tab = ["study", "practise", "topics", "slides", "notes"].includes(tab) ? tab : "practise";
-  [["study", "#tabY"], ["practise", "#tabP"], ["topics", "#tabT"], ["slides", "#tabS"], ["notes", "#tabN"]].forEach(([t, id]) => {
-    if (S.tab === t) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
-  });
+  S.tab = ["study", "practise", "topics", "slides", "notes", "more"].includes(tab) ? tab : "study";
+  // four tabs: Study, Search (inside Study), Notes, and More (LDD's exam room lives there)
+  const on = S.tab === "notes" ? "#tabN" : S.tab === "study" ? (/^#\/study\/search/.test(location.hash) ? "#tabF" : "#tabY") : "#tabM";
+  ["#tabY", "#tabF", "#tabN", "#tabM"].forEach((id) => { if (id === on) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current"); });
   $("#practise").hidden = S.tab === "notes";
   $("#notesview").hidden = S.tab !== "notes";
   document.body.dataset.tab = S.tab;

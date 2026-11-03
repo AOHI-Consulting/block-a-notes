@@ -4,7 +4,8 @@
    of recalling it falls to 90%) and a difficulty d (1–10), and recall fades as (1 + 19/81 · days/s)^-0.5.
    Progress lives on this device and, once you have opened your page on the Notes tab, in your page's
    private progress, so phone and laptop share it. Keys: mem:<course> (items), mem:days (cards done per day),
-   mem:notes-<course> (your own notes), mem:path-<course> (marks on the path). */
+   mem:notes-<course> (your own notes), mem:path-<course> (marks on the path), mem:mix (the ideas you mix
+   up, every course) and mem:case (your case notebook, every course). */
 
 const Mem = (() => {
   const W = [0.4872, 1.4003, 3.7145, 13.8206, 5.1618, 1.2298, 0.8975, 0.031, 1.6474, 0.1367, 1.0461, 2.1072, 0.0793, 0.3246, 1.587, 0.2272, 2.8755];
@@ -92,6 +93,58 @@ const Mem = (() => {
     b.at = t; save(k, b); later();
   }
 
+  /* ---------- mix-ups ----------
+     Two ideas you keep confusing. A wrong answer that names another idea (a scene's wrong topic, a
+     framework picked or matched in another's place) is a slip between the two. Two slips make a mix-up;
+     telling them apart without a miss on three different days settles it. One key for every course
+     (mem:mix, per pair "<course>:<id>|<id>": slips s, days told apart ok, t, n), so it syncs like notes. */
+  const MIX_AT = 2, APART = 3;
+  const mixId = (course, a, b) => course + ":" + [a, b].sort().join("|");
+  function slip(course, a, b, t = now()) {
+    if (!course || !a || !b || a === b) return;
+    const bx = load("mem:mix"), id = mixId(course, a, b), old = bx.items[id] || { s: 0, ok: [], t: 0, n: 0 };
+    // one slip per sitting: the same miss again within the hour (a lesson replays what you missed) is the same slip
+    if (old.ls && t - old.ls < 3600) return;
+    // a slip after they were settled starts again; before that, it takes back the last good day
+    const ok = (old.ok || []).length >= APART ? [] : (old.ok || []).slice(0, -1);
+    bx.items[id] = { s: (old.s || 0) + 1, ok, ls: t, t: Math.max(t, (old.t || 0) + 1e-3), n: (old.n || 0) + 1 };
+    bx.at = t; save("mem:mix", bx); later();
+  }
+  function apart(id, t = now()) {
+    const bx = load("mem:mix"), old = bx.items[id]; if (!old) return 0;
+    const ok = [...new Set([...(old.ok || []), today()])].slice(-5);
+    bx.items[id] = { ...old, ok, t: Math.max(t, (old.t || 0) + 1e-3), n: (old.n || 0) + 1 };
+    bx.at = t; save("mem:mix", bx); later();
+    return ok.length;
+  }
+  function mixups(course) {
+    const pre = course + ":";
+    return Object.entries(load("mem:mix").items)
+      .filter(([id, v]) => id.startsWith(pre) && v.s >= MIX_AT && (v.ok || []).length < APART)
+      .map(([id, v]) => { const [a, b] = id.slice(pre.length).split("|"); return { id, course, a, b, slips: v.s, days: (v.ok || []).length, today: (v.ok || []).includes(today()), t: v.t }; })
+      .sort((x, y) => Number(x.today) - Number(y.today) || y.slips - x.slips || y.t - x.t);
+  }
+  const mixOf = (id) => load("mem:mix").items[id] || null;
+
+  /* ---------- your case notebook ----------
+     Ideas applied to one hotel of your choice, per course: what you wrote and the points you ticked.
+     One key for every course (mem:case, per entry "<course>:<topic id>", and "<course>:_hotel" for the
+     hotel's name); private, and synced like notes (the later edit wins). */
+  const CASE_MAX = 4000;
+  const caseGet = (course, id) => load("mem:case").items[course + ":" + id] || null;
+  function caseSet(course, id, v, t = now()) {
+    const k = course + ":" + id, b = load("mem:case"), old = b.items[k] || {};
+    const nx = { ...old, ...v };
+    if (typeof nx.text === "string") nx.text = nx.text.slice(0, CASE_MAX);
+    const same = (o) => JSON.stringify({ text: o.text || "", ticks: o.ticks || [] });
+    if (old.t && same(old) === same(nx)) return;
+    nx.t = Math.max(t, (old.t || 0) + 1e-3); nx.n = (old.n || 0) + 1;
+    b.items[k] = nx; b.at = t; save("mem:case", b); later();
+  }
+  const caseAll = (course) => Object.entries(load("mem:case").items)
+    .filter(([k, v]) => k.startsWith(course + ":") && !k.endsWith(":_hotel") && typeof v?.text === "string" && v.text.trim())
+    .map(([k, v]) => ({ id: k.slice(course.length + 1), text: v.text, ticks: v.ticks || [], t: v.t }));
+
   /* ---------- across devices (your page's private progress) ---------- */
   const sy = { state: "local", at: 0, timer: null, busy: null, again: false };
   const keys = () => {
@@ -164,7 +217,8 @@ const Mem = (() => {
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync(); else if (sy.timer) sync(); });
 
   return { grade, tick, get, last, recall, seed, summary, sync, status, today, days: () => load("mem:days").days,
-           note, setNote, notes, NOTE_MAX, flag, flagged, _next: next, _merge: merge };
+           note, setNote, notes, NOTE_MAX, flag, flagged, slip, apart, mixups, mixOf, MIX_AT, APART,
+           caseGet, caseSet, caseAll, CASE_MAX, _next: next, _merge: merge };
 })();
 
 window.Mem = Mem;

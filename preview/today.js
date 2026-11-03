@@ -72,7 +72,9 @@ const Today = (() => {
     const names = [...new Set(near.concat(far).map((f) => nameOf(f.title)))];   // no two options alike
     if (names.length < 3) return null;
     const options = shuffle([nameOf(it.title), ...names.slice(0, 3)]);
-    return { cue: c, options, answer: options.indexOf(nameOf(it.title)) };
+    // which framework each option is, so a wrong pick can count as a mix-up between the two
+    const ids = options.map((o) => (o === nameOf(it.title) ? it.id : others.find((f) => nameOf(f.title) === o)?.id || null));
+    return { cue: c, options, ids, answer: options.indexOf(nameOf(it.title)) };
   }
   function whereOf(pack, it) {
     if (!it.class || !pack.classes[it.class]) return null;

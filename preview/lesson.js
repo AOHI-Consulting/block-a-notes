@@ -1,4 +1,4 @@
-/* Lesson: the player for a lesson on the path and for the daily session. One exercise at a time,
+/* Lesson: the player for a lesson (a room of a course's hotel) and for the daily session. One exercise at a time,
    full screen: you answer, press Check (or Enter), and a bar slides up saying whether you were right,
    with why and where to look. What you missed comes back once at the end. No hearts and no timer: a
    wrong answer costs nothing but a second look.
@@ -7,7 +7,12 @@
    at work in this hotel?), mcq, pick (which framework is this?), where (which class?), type (name the
    framework), match (pairs),
    say (explain it, then mark yourself), flash, story (a class's story with questions in it), explain
-   (an open question: write, tick the key points you covered, mark yourself) and note (a message).
+   (an open question: write, tick the key points you covered, mark yourself), contrast and sort (a
+   mix-up: two ideas side by side, then cards to sort into one or the other), apply (your case
+   notebook: how does it show up at your hotel?) and note (a message).
+   The crab reacts to each answer: claws up when you're right, a head tilt when you're not. A wrong
+   answer that names another idea is noted as a slip between the two (Mem.slip): that's how mix-ups
+   are found.
    Every answer is a review for Mem, so the path, the daily session and the class pages share one memory.
    path.js and study.js build the exercises; this file only plays them. */
 
@@ -200,12 +205,14 @@ const Lesson = (() => {
   function feedback(ok, body, title) {
     const f = R.foot, inner = el("div", "ls-foot-in ls-fb");
     f.textContent = ""; f.className = "ls-foot " + (ok ? "ok" : "no");
-    const msg = el("div", "ls-fbt"), h = el("p", "ls-fbh"), ic = el("span", "ls-fbi");
-    ic.append(K().icon(ok ? "check" : "x"));
-    h.append(ic, document.createTextNode(title || (ok ? PRAISE[Math.floor(Math.random() * PRAISE.length)] : "Not quite")));
-    msg.append(h);
-    if (body) msg.append(body);
-    const go = btn("Continue", ok ? "good" : "bad", next);
+    const msg = el("div", "ls-fbt"), h = el("p", "ls-fbh"), cr = el("span", "ls-crab");
+    cr.innerHTML = Crab.svg(ok ? "right" : "wrong");
+    h.append(document.createTextNode(title || (ok ? PRAISE[Math.floor(Math.random() * PRAISE.length)] : "Not quite")));
+    const row = el("div", "ls-fbrow"), txt = el("div", "ls-fbtx");
+    txt.append(h);
+    if (body) txt.append(body);
+    row.append(cr, txt); msg.append(row);
+    const go = btn("Continue", ok ? "good" : "next", next);
     inner.append(msg, go); f.append(inner);
     R.primary = go;
     tone(ok ? "ok" : "no"); streak(ok);
@@ -229,7 +236,7 @@ const Lesson = (() => {
     if (!answered) { const fn = R.spec.exit; stop(); fn?.(); return; }
     const m = el("div", "ls-modal"), d = el("div", "ls-dialog");
     d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "Leave the lesson?");
-    d.append(el("h3", null, "Leave the lesson?"), el("p", null, "What you've answered so far is kept. You can pick it up again from the path."));
+    d.append(el("h3", null, "Leave the lesson?"), el("p", null, "What you've answered so far is kept. You can pick it up again any time."));
     const stay = btn("Keep going", "primary", () => { m.remove(); R.modal = null; });
     const go = btn("Leave", "ghost", () => { const fn = R.spec.exit; stop(); fn?.(); });
     const b = el("div", "ls-dbtns"); b.append(go, stay); d.append(b); m.append(d);
@@ -243,11 +250,16 @@ const Lesson = (() => {
     const graded = r.log.filter((l) => l.g != null && !l.ex.retry), right = graded.filter((l) => l.g >= 3).length;
     const result = { log: r.log, graded: graded.length, right, best: r.best, secs: Math.round((Date.now() - r.t0) / 1000) };
     const end = el("section", "ls-end ls-in"), medal = el("div", "ls-medal");
-    medal.append(K().icon(r.spec.icon || "trophy"));
+    medal.innerHTML = Crab.svg(r.spec.crab || "done");
     end.append(medal, el("h2", null, r.spec.title || "Lesson complete!"));
     const stats = el("div", "ls-stats");
     const tile = (v, l, cls) => { const t = el("div", "ls-stat " + (cls || "")); t.append(el("b", null, v), el("span", null, l)); stats.append(t); };
-    if (graded.length) tile(Math.round((100 * right) / graded.length) + "%", "right first time", "acc");
+    // per thing you answered, how it ended: got it (or partly), or coming back sooner. No percentage.
+    const last = new Map();
+    r.log.forEach((l) => { if (l.g == null) return; const ids = (l.ex.items || []).map((x) => x.id); (ids.length ? ids : [l.ex.it?.id]).forEach((id) => id && last.set(id, l.g)); });
+    const got = [...last.values()].filter((g) => g >= 2).length, back = last.size - got;
+    if (got) tile(String(got), "got it", "acc");
+    if (back) tile(String(back), "coming back", "combo");
     const m = Math.floor(result.secs / 60), s = result.secs % 60;
     tile(m + ":" + String(s).padStart(2, "0"), "minutes", "time");
     if (r.best >= 3) tile(String(r.best), "in a row, at best", "combo");
@@ -504,6 +516,8 @@ const Lesson = (() => {
         const v = norm(input.value), want = [ex.answer, ...(ex.alt || [])].map(norm);
         const exact = want.includes(v), close = !exact && want.some((w) => lev(v, w) <= Math.max(1, Math.floor(w.length / 7)));
         const ok = exact || close;
+        // the name of another framework: a slip between the two
+        if (!ok) { const other = ex.pk.items.find((f) => f.kind === "framework" && f.id !== it.id && norm(Today.nameOf(f.title)) === v); if (other) Mem.slip(ex.course, it.id, other.id); }
         input.classList.add(ok ? "right" : "wrong");
         grade(ex, exact ? 3 : close ? 2 : 1);
         const b = el("div", "ls-fbody");
@@ -551,6 +565,7 @@ const Lesson = (() => {
         } else {
           [other.b, b].forEach((x) => { x.classList.remove("wrong"); void x.offsetWidth; x.classList.add("wrong"); setTimeout(() => x.classList.remove("wrong"), 600); });
           miss[other.p.id] = (miss[other.p.id] || 0) + 1; miss[p.id] = (miss[p.id] || 0) + 1;
+          Mem.slip(ex.course, other.p.id, p.id);
           tone("no");
         }
       }
@@ -666,6 +681,76 @@ const Lesson = (() => {
       };
     },
 
+    // a mix-up: the two ideas side by side, before sorting cards into one or the other
+    contrast(ex) {
+      const a = card("ls-contrast"), top = el("div", "ls-mixhead"), cr = el("div", "ls-mixcrab"), t = el("div");
+      cr.innerHTML = Crab.svg("hold", { cards: ["A", "B"], colors: ["#FBD3C6", "#CCD6FF"] });
+      t.append(el("p", "kicker ls-mixk", "Tell them apart"), el("h2", "ls-q", "You've mixed these two up."));
+      top.append(cr, t);
+      const vs = el("div", "ls-vs"), links = !!ex.pk.course.slides;
+      [[ex.a, ex.ga, "a", "A"], [ex.b, ex.gb, "b", "B"]].forEach(([it, g, cls, L]) => {
+        const d = el("div", "ls-vsx " + cls), h = el("p", "ls-vsh");
+        h.append(el("span", "ls-vsl", L), document.createTextNode(it.title));
+        d.append(h, el("p", "ls-vsg", g));
+        const refs = K().sourcesLine(it.x?.refs || it.refs, links); if (refs) d.append(refs);
+        vs.append(d);
+      });
+      a.append(top, vs);
+      // a topic's own "easy to mix up", when it is about the other one
+      // (by a word of the other's name that the two names don't share)
+      const own = (it, other) => norm(it.title).split(" ").filter((w) => w.length > 4 && !norm(other.title).split(" ").includes(w));
+      const about = (x, it, other) => {
+        const ws = own(other, it), hit = ws.filter((w) => new RegExp("\\b" + w + "\\b").test(norm(x?.mixup || ""))).length;
+        return !!x?.mixup && ws.length > 0 && hit >= Math.min(2, ws.length);
+      };
+      const mx = about(ex.a.x, ex.a, ex.b) ? ex.a.x.mixup : about(ex.b.x, ex.b, ex.a) ? ex.b.x.mixup : null;
+      if (mx) a.append(SK().sec("mix", "Easy to mix up", "", mx));
+      footContinue("Sort them", () => { R.log.push({ ex, g: null }); next(); }, "Then a few quick cards to sort.");
+      return { el: a };
+    },
+
+    // a mix-up card: which of the two is this? (both names blanked)
+    sort(ex) {
+      const a = card("ls-sort"), names = [Path.short(ex.a.title), Path.short(ex.b.title)];
+      a.append(kick(ex, "Tell them apart · " + ex.k + " of " + ex.of), el("h2", "ls-q", "Which one is this?"));
+      const cue = el("p", "ls-cue");
+      ex.cue.forEach((p) => cue.append(p === null ? el("span", "ls-blank") : document.createTextNode(p)));
+      const bins = el("div", "ls-bins");
+      let locked = false;
+      const bs = names.map((nm, i) => {
+        const b = el("button", "ls-bin " + (i ? "b" : "a")); b.type = "button";
+        b.append(el("span", "ls-vsl", i ? "B" : "A"), el("span", "ls-binn", nm));
+        b.addEventListener("click", () => pick(i));
+        bins.append(b); return b;
+      });
+      a.append(cue, bins);
+      const f = R.foot, inner = el("div", "ls-foot-in"); f.textContent = ""; f.className = "ls-foot";
+      inner.append(el("p", "ls-hint", "Tap A or B.")); f.append(inner); R.primary = null;
+      function pick(i) {
+        if (locked) return; locked = true;
+        const ok = i === ex.answer;
+        bs.forEach((b, k) => { b.disabled = true; if (k === ex.answer) b.classList.add("right"); else if (k === i) b.classList.add("wrong"); });
+        grade(ex, ok ? 3 : 1);
+        const it = ex.answer ? ex.b : ex.a, body = el("div", "ls-fbody");
+        body.append(el("p", "ls-fbl", (ok ? "Yes: " : "It's ") + it.title + "."));
+        feedback(ok, body);
+      }
+      return { el: a, focus: bs[0], key(e) { const k = e.key.toLowerCase(); if (k === "a" || k === "1") { pick(0); return; } if (k === "b" || k === "2") { pick(1); return; } return false; } };
+    },
+
+    // apply it to your hotel (optional): a few lines and the points you covered, for your case notebook
+    apply(ex) {
+      const a = card("ls-apply"), ed = SK().applyBox(ex.course, ex.pk, ex.it);
+      a.append(kick(ex, "Apply it · optional"), ed.el);
+      const f = R.foot, inner = el("div", "ls-foot-in"); f.textContent = ""; f.className = "ls-foot";
+      const skip = btn("Skip", "ghost", () => { R.log.push({ ex, g: null }); next(); });
+      const save = btn("Save to my case notebook", "primary", () => { ed.save(); Mem.tick(); R.log.push({ ex, g: null }); next(); });
+      save.disabled = !ed.text();
+      ed.onInput(() => { save.disabled = !ed.text(); });
+      inner.append(skip, save); f.append(inner); R.primary = save;
+      return { el: a };
+    },
+
     // an open question: write your answer, see the key points, tick what you covered, mark yourself
     explain(ex) {
       const q = ex.it, a = card("ls-explain"), key = ex.course === "ldd" ? "explain" : "explain:" + ex.course;
@@ -725,7 +810,12 @@ const Lesson = (() => {
       tone("tap"); ready(true);
     }
     function lock() { locked = true; bs.forEach((b, k) => { b.disabled = true; if (k === right) b.classList.add("right"); else if (k === picked) b.classList.add("wrong"); }); }
-    function check() { if (locked || picked === null) return; lock(); const ok = picked === right; grade(ex, ok ? 3 : 1); feedback(ok, explain(ok, right)); }
+    function check() {
+      if (locked || picked === null) return; lock(); const ok = picked === right; grade(ex, ok ? 3 : 1);
+      const ids = ex.ids || ex.pick?.ids;
+      if (!ok && ids?.[picked] && ex.it) Mem.slip(ex.course, ex.it.id, ids[picked]);
+      feedback(ok, explain(ok, right));
+    }
     function skip() { if (locked) return; lock(); grade(ex, 1); feedback(false, explain(false, right), "Here's the answer"); }
     return {
       el: a, focus: bs[0],

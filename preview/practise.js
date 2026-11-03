@@ -32,7 +32,7 @@ const Practise = (() => {
     expand: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5", shrink: "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5", plus: "M12 5v14M5 12h14", minus: "M5 12h14",
     pen: "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16zM13.5 6.5l4 4",
     trophy: "M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3",
-    layers: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5", bolt: "M13 2L4 14h7l-1 8 9-12h-7z",
+    layers: "M12 3l9 5-9 5-9-5zM3 13l9 5 9-5", bolt: "M13 2L4 14h7l-1 8 9-12h-7z", swap: "M4 8h15l-4-4M20 16H5l4 4",
     speaker: "M4 9v6h4l5 4V5L8 9zM16.5 9a4.5 4.5 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11", mute: "M4 9v6h4l5 4V5L8 9zM17 9.5l5 5M22 9.5l-5 5",
     eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
     eyeoff: "M9.9 9.9a3 3 0 1 0 4.2 4.2M10.7 5.1A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13.2 13.2 0 0 1-1.7 2.7M6.6 6.6A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.4-1.6M2 2l20 20",
@@ -181,9 +181,10 @@ const Practise = (() => {
   function parse() {
     const h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
     const seg = h.split("/").filter(Boolean);
-    // the Study tab is opt-in per device: opening #/study once turns it on, and then it is home
-    if (seg[0] === "study") { store.set("study:on", true); return { tab: "study", name: "study", seg: seg.slice(1) }; }
-    if (!seg.length && store.get("study:on")) return { tab: "study", name: "study", seg: [] };
+    // Study is home; LDD's exam room (Practise, Topics, Slides) lives under More
+    if (seg[0] === "study") return { tab: "study", name: "study", seg: seg.slice(1) };
+    if (!seg.length) return { tab: "study", name: "study", seg: [] };
+    if (seg[0] === "more") return { tab: "more", name: "more" };
     if (seg[0] === "notes") return { tab: "notes" };
     if (seg[0] === "topics") return { tab: "topics", name: "topics" };
     if (seg[0] === "slides") return { tab: "slides", name: "slides" };
@@ -192,21 +193,18 @@ const Practise = (() => {
       const sec = ["case", "a", "b", "score"].includes(seg[2]) ? seg[2] : "case";
       return { tab: "practise", name: "exam", id: seg[1], sec, n: parseInt(seg[3], 10) || 0 };
     }
-    return { tab: "practise", name: "home" };
+    if (seg[0] === "practise") return { tab: "practise", name: "home" };
+    return { tab: "study", name: "study", seg: [] };
   }
   function go(path) {
     const h = "#/" + path;
     if (location.hash === h) route(); else location.hash = h;
   }
-  function studyTab() {
-    document.getElementById("tabY").hidden = !store.get("study:on");
-    document.querySelectorAll("#tabs .tab:not([hidden]) i").forEach((i, k) => (i.textContent = k + 1));
-  }
   function route() {
     const r = parse();
     clearInterval(P.timerTick);
     closeDrawer(); closeSlides();
-    studyTab(); showTab(r.tab);
+    showTab(r.tab);
     if (r.tab === "notes") return;
     const prev = P.view;
     P.view = r;
@@ -1332,6 +1330,7 @@ const Practise = (() => {
     else if (P.view.name === "exam") renderExam(box);
     else if (P.view.name === "drill") renderDrill(box);
     else if (P.view.name === "study") Study.render(box, P.view.seg);
+    else if (P.view.name === "more") Study.more(box);
     else renderHome(box);
   }
 

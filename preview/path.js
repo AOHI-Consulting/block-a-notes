@@ -1,10 +1,11 @@
-/* Path: a course as a path of short lessons, class by class (each class a unit), to follow step by step.
-   A unit: the class's story (with two questions in it), a lesson per topic (with the frameworks it
+/* Path: a course as a hotel of short lessons, class by class. Each class is a floor (a unit) with its
+   rooms: the class's story (with two questions in it), a lesson per topic (with the frameworks it
    explains and the questions that test it), the class's other frameworks, its open questions, and a
-   review of the whole class. The next lesson is marked; later ones can be done earlier ("jump ahead");
-   a finished lesson whose items are fading asks to be refreshed. A topic is taught in small steps:
-   a few sentences at a time, each followed by a gap to fill; then a hotel scene to recognise it in,
-   then the usual mix-up. "Your mistakes" replays what you last got wrong.
+   review of the whole class. A room's window lights up once you know it and dims as it fades; the
+   next one is marked, and any can be opened early. A topic is taught in small steps: a few sentences
+   at a time, with gaps to fill a step later; a hotel scene to recognise it in; the usual mix-up; and
+   optionally applying it to your hotel (the case notebook). "Your mistakes" replays what you last got
+   wrong, "Refresh" what is fading, and the mix-ups the pairs of ideas you keep confusing.
    What's done is read from Mem (every answer, anywhere in Study, counts), plus two marks Mem keeps
    for the path (a story read, a review done). Lesson.play plays the lessons. */
 
@@ -14,9 +15,6 @@ const Path = (() => {
   const nameOf = (t) => Today.nameOf(t);
   const short = (t) => String(t).split(/:\s|\s[–—]\s/)[0];
   const chunk = (a, n) => { const out = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out; };
-  const OFFSET = [0, 1, 2, 1, 0, -1, -2, -1];   // the path winds left and right
-  const LABEL = { story: "Story", lesson: "Lesson", frameworks: "Frameworks", explain: "Explain it", review: "Review" };
-  const ICON = { story: "book", lesson: "star", frameworks: "layers", explain: "pen", review: "trophy" };
 
   /* ---------- a course as units of lessons ---------- */
   function units(pk) {
@@ -147,6 +145,11 @@ const Path = (() => {
     return segs.join("");
   }
 
+  // a key term followed by its own abbreviation ("**customer service** (CS)") would give its gap away
+  function givesAway(s, term) {
+    const m = new RegExp("\\*\\*" + term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\*\\*\\s*\\(([A-Za-z&]{2,6})\\)").exec(s);
+    return !!m && (m[1].match(/[A-Z]/g) || []).length >= 2;
+  }
   // a sentence from the topic with up to three of its bold key terms as gaps, and tiles to fill them
   function clozeEx(c, pk, t, text) {
     const plain = text || t.x?.plain; if (!plain) return null;
@@ -164,7 +167,7 @@ const Path = (() => {
     };
     let best = null;
     spans.forEach((s) => {
-      const ks = [...s.matchAll(/\*\*(.+?)\*\*/g)].map((m) => m[1]).filter((x) => words(x).length <= 5);
+      const ks = [...s.matchAll(/\*\*(.+?)\*\*/g)].map((m) => m[1]).filter((x) => words(x).length <= 5 && !givesAway(s, x));
       const n = words(s.replace(/\*\*/g, "")).length;
       if (!ks.length || n < 7 || n > 50) return;
       const score = ks.slice(0, 3).reduce((a, x) => a + worth(x, s), 0) * 10 - Math.abs(n - 26) / 4;
@@ -174,7 +177,7 @@ const Path = (() => {
     const answers = [], parts = [];
     best.s.split(/(\*\*.+?\*\*)/).forEach((seg) => {
       const m = /^\*\*(.+)\*\*$/.exec(seg);
-      if (m && words(m[1]).length <= 5 && answers.length < 3 && !answers.some((a) => norm(a) === norm(m[1]))) { parts.push({ k: answers.length }); answers.push(m[1]); }
+      if (m && words(m[1]).length <= 5 && answers.length < 3 && !givesAway(best.s, m[1]) && !answers.some((a) => norm(a) === norm(m[1]))) { parts.push({ k: answers.length }); answers.push(m[1]); }
       else if (seg) parts.push(seg);
     });
     const avg = answers.reduce((s, a) => s + words(a).length, 0) / answers.length;
@@ -204,22 +207,25 @@ const Path = (() => {
     for (const x of ss) { if (open.length >= 2 && words(open.join(" ")).length + words(x).length > 62) break; open.push(x); }
     const cue = Today.cue({ title: t.title, gist: open.join(" ") });
     if (!cue) return null;
-    return { type: "scene", ...base(c, pk, t), hotel, cue, more: open.length < ss.length, options: options.map((x) => x.title), answer: options.indexOf(t) };
+    return { type: "scene", ...base(c, pk, t), hotel, cue, more: open.length < ss.length, options: options.map((x) => x.title), ids: options.map((x) => x.id), answer: options.indexOf(t) };
   }
-  // a new topic in small steps: its plain words a part at a time, each with a gap or two to fill
-  // straight after; then a hotel scene to recognise it in; then the usual mix-up. Reading counts as
+  // a new topic in small steps: its plain words a part at a time, and a hotel scene to recognise it in.
+  // Each part's gaps come one step later (after the next part, the last one after the scene), so the
+  // words are recalled rather than copied from the screen. Then the usual mix-up. Reading counts as
   // one card for your run, not one per part.
   function teachSteps(c, pk, t) {
     const x = t.x;
     if (!x?.plain) return [{ ...learnEx(c, pk, t), tick: true }];   // a topic with only our notes: one card, as before
     const ps = parts(x.plain), steps = [];
+    const gaps = ps.map((text) => clozeEx(c, pk, t, text) || clozeEx(c, pk, t, boldKnown(pk, text)));
     ps.forEach((text, k) => {
       steps.push({ type: "read", ...base(c, pk, t), items: [], part: "plain", text, k, n: ps.length, retryable: false });
-      const cz = clozeEx(c, pk, t, text) || clozeEx(c, pk, t, boldKnown(pk, text)); if (cz) steps.push(cz);
+      if (k > 0 && gaps[k - 1]) steps.push(gaps[k - 1]);
     });
     const sc = sceneEx(c, pk, t);
     if (sc) steps.push(sc);
     else if (x.hotel) steps.push({ type: "read", ...base(c, pk, t), items: [], part: "hotel", text: x.hotel, retryable: false });
+    if (gaps[ps.length - 1]) steps.push(gaps[ps.length - 1]);
     steps.push({ type: "read", ...base(c, pk, t), items: [], part: x.mixup ? "mixup" : "end", text: x.mixup || "", last: true, tick: true, retryable: false });
     return steps;
   }
@@ -250,6 +256,9 @@ const Path = (() => {
     steps.push(...shuffle(rest));
     if (m) steps.push(m);
     if (nd.parts.length) steps.push(sayEx(c, pk, nd.parts[0].t));
+    // then, optionally, apply it to your hotel (your case notebook), unless you've done so already
+    const t0 = nd.parts[0]?.t;
+    if (t0 && !store.get("study:apply:off") && !Mem.caseGet(c, t0.id)?.text?.trim()) steps.push({ type: "apply", ...base(c, pk, t0), items: [], retryable: false });
     return steps.filter(Boolean);
   }
   function frameworkSteps(c, pk, fws) {
@@ -294,114 +303,246 @@ const Path = (() => {
   }
   const minutes = (nd) => Math.max(2, Math.round(({ story: 3, explain: 6 * (nd.prompts?.length || 1), review: 5, lesson: 2.5 + (nd.items.length - 1) * 0.4 }[nd.kind]) || nd.items.length * 0.5 + 1));
 
-  /* ---------- the path on screen ---------- */
-  function render(w, { course, pk, meta, justDone }) {
-    const crs = pk.course, us = units(pk), cur = current(course, pk);
-    const hero = el("section", "pa-hero");
-    hero.append(SK().crumbs("#/study", "All courses"), el("p", "kicker", [crs.code, crs.lecturer].filter(Boolean).join(" · ")), el("h1", null, crs.full || crs.name));
-    if (crs.note) hero.append(el("p", "small st-note", crs.note));
-    // where you stand: known, fading, your run
-    const sm = Mem.summary(course), run = Today.run(Mem.days(), Mem.today()), all = allNodes(pk), done = all.filter((nd) => status(course, nd).done).length;
-    const strip = el("div", "pa-strip");
-    const stat = (ic, v, l, cls) => { const s = el("div", "pa-stat " + (cls || "")); s.append(K().icon(ic), el("b", null, v), el("span", null, l)); strip.append(s); };
-    stat("star", done + "/" + all.length, "lessons", "done");
-    stat("check", sm.known + "/" + meta.items, "known", "known");
-    if (sm.fading) stat("reset", String(sm.fading), "fading", "fading");
-    stat("bolt", String(run.count), run.count === 1 ? "day run" : "day run", run.today ? "run on" : "run");
-    const tools = el("div", "pa-tools");
-    tools.append(SK().link("Today's session", "#/study/today", "small", "play"));
-    const miss = mistakes(course, pk).length;
-    if (miss) { const m = SK().link("Your mistakes", "#/study/" + course + "/l/mistakes", "small pa-miss", "reset"); m.append(el("b", null, String(miss))); m.title = miss + (miss === 1 ? " thing" : " things") + " you last got wrong: one more go"; tools.append(m); }
-    if (pk.frameworks.length) tools.append(SK().link("Framework flashcards", "#/study/" + course + "/cards", "small", "layers"));
-    hero.append(strip, tools);
-    w.append(hero);
-    const page = el("div", "st-page");
-    SK().findBox(w, [course], page);
-    const path = el("div", "pa");
-    let curEl = null, justEl = null;
-    us.forEach((u) => {
-      const sec = el("section", "pa-unit");
-      sec.style.setProperty("--cc", u.n ? SK().color(u.n, pk) : "var(--c9)");
-      const ban = el("header", "pa-banner"), bt = el("div", "pa-bt");
-      const doneN = u.nodes.filter((nd) => status(course, nd).done).length;
-      bt.append(el("p", "pa-k", (u.n ? SK().unit(pk) + " " + u.n : "The whole course") + " · " + doneN + "/" + u.nodes.length), el("h2", null, u.name));
-      if (u.line) { const ln = el("p", "pa-line", u.line); ln.addEventListener("click", () => ln.classList.toggle("open")); bt.append(ln); }   // shortened on a phone: tap for all of it
-      ban.append(bt);
-      if (u.n) ban.append(SK().link("Class notes", "#/study/" + course + "/c" + u.n, "small pa-notes", "book"));
-      const unitDone = doneN === u.nodes.length;
-      if (unitDone) { sec.classList.add("complete"); const b = el("span", "pa-badge"); b.append(K().icon("check"), document.createTextNode("Complete")); bt.prepend(b); }
-      sec.append(ban);
-      const ol = el("ol", "pa-nodes");
-      u.nodes.forEach((nd, k) => {
-        const st = status(course, nd), isCur = cur && nd.id === cur.id;
-        const after = !st.done && !isCur && cur && all.indexOf(nd) > all.indexOf(cur);
-        const li = el("li", "pa-node " + (st.done ? (st.fading ? "done fading" : "done") : isCur ? "current" : after ? "ahead" : "open") + " k-" + nd.kind);
-        li.style.setProperty("--dx", OFFSET[k % OFFSET.length]);
-        const spot = el("div", "pa-spot"), b = el("button", "pa-btn"); b.type = "button";
-        b.setAttribute("aria-label", LABEL[nd.kind] + ": " + nd.title + (st.done ? ", done" : isCur ? ", up next" : ""));
-        if (st.part > 0 && st.part < 1) {   // a ring shows how far you got
-          const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg"), ci = document.createElementNS(NS, "circle");
-          svg.setAttribute("viewBox", "0 0 100 100"); svg.setAttribute("class", "pa-ring"); svg.setAttribute("aria-hidden", "true");
-          ci.setAttribute("cx", "50"); ci.setAttribute("cy", "50"); ci.setAttribute("r", "46"); ci.setAttribute("pathLength", "100");
-          ci.setAttribute("stroke-dasharray", Math.round(st.part * 100) + " 100");
-          svg.append(ci); spot.append(svg);
-        }
-        b.append(K().icon(st.done && !st.fading ? "check" : st.fading ? "reset" : ICON[nd.kind]));
-        spot.append(b);
-        if (isCur) { spot.append(el("span", "pa-tip", st.seen ? "Carry on" : "Start")); curEl = li; }
-        spot.append(el("span", "pa-lab", nd.title));   // a lesson: its topic, shortened
-        li.append(spot);
-        if (justDone === nd.id) { li.classList.add("just"); justEl = li; }
-        b.addEventListener("click", (e) => { e.stopPropagation(); popover(li, course, pk, u, nd, st, isCur, after); });
-        ol.append(li);
-      });
-      sec.append(ol);
-      path.append(sec);
+  /* ---------- the course as a hotel ----------
+     A class is a floor (the first at street level), a topic a room with a window: lit once you know it,
+     dimming as it fades, the next one marked. The crab carries the building. Each floor opens as a
+     corridor: the story in the lift lobby, a room per topic, the library for frameworks, the rooftop
+     for explaining and the review. Any door opens; the order is a suggestion. */
+  const ROOMNAME = { story: "Lift lobby", frameworks: "Library", explain: "Rooftop", review: "Rooftop" };
+  const roomNo = (u, nd) => (nd.kind === "lesson" ? String(u.n * 100 + nd.num) : "");
+  const whereIn = (u, nd) => (nd.kind === "lesson" ? "Room " + roomNo(u, nd) : ROOMNAME[nd.kind]);
+  const nodeTitle = (pk, nd) => (nd.kind === "lesson" ? nd.title : nd.kind === "story" ? "The story" : nd.kind === "explain" ? "Explain it" : nd.kind === "review" ? SK().unit(pk) + " review" : nd.title);
+  const lessonsOf = (u) => { const ls = u.nodes.filter((nd) => nd.kind === "lesson"); return ls.length ? ls : u.nodes; };
+  function windowsOf(course, u, cur) {
+    return lessonsOf(u).map((nd) => { const st = status(course, nd); return st.done ? (st.fading ? "D" : "L") : cur && nd.id === cur.id ? "C" : st.part > 0 ? "P" : "-"; }).join("");
+  }
+  function roomsLit(course, list) {
+    let rooms = 0, lit = 0, dim = 0;
+    list.forEach((u) => lessonsOf(u).forEach((nd) => { rooms++; const st = status(course, nd); if (st.done) { lit++; if (st.fading) dim++; } }));
+    return { rooms, lit, dim };
+  }
+  const litLine = (c) => c.lit + " of " + c.rooms + (c.rooms === 1 ? " room" : " rooms") + " lit" + (c.dim ? " · " + c.dim + " dimming" : "");
+  // what is fading in a course, for a refresh
+  const KINDS = new Set(["topic", "framework", "mcq"]);
+  const fadingIds = (c, pk) => pk.items.filter((it) => KINDS.has(it.kind) && Mem.get(c, it.id) && Mem.recall(c, it.id) < Today.FADING).map((it) => it.id);
+
+  function render(w, { course, pk, justDone }) {
+    const crs = pk.course, us = units(pk), floors = us.filter((u) => u.n), cur = current(course, pk), U = SK().unit(pk);
+    const run = Today.run(Mem.days(), Mem.today()), c = roomsLit(course, floors);
+    const head = el("section", "ho-head");
+    head.append(SK().crumbs("#/study", "All courses"), el("p", "kicker", [crs.code, crs.lecturer].filter(Boolean).join(" · ")), el("h1", null, crs.full || crs.name), el("p", "ho-sum", litLine(c)));
+    if (crs.note) head.append(el("p", "small st-note", crs.note));
+    w.append(head);
+    const page = el("div", "ho-page");
+    // the building
+    const left = el("div", "ho-left"), bld = el("div", "ho-bld");
+    bld.innerHTML = Crab.hotel({
+      code: crs.code || "", mood: run.today ? "happy" : "idle",
+      label: (crs.code || crs.name) + " as a hotel: a floor per " + U.toLowerCase() + ", a window per topic. " + litLine(c) + ".",
+      floors: floors.map((u) => {
+        const fc = roomsLit(course, [u]), ls = lessonsOf(u), j = justDone ? ls.findIndex((nd) => nd.id === justDone) : -1;
+        return { n: u.n, windows: windowsOf(course, u, cur), href: "#/study/" + course + "/f/" + u.n, just: j,
+          done: u.nodes.every((nd) => status(course, nd).done), aria: "Floor " + u.n + ", " + U + " " + u.n + ": " + u.name + ". " + litLine(fc) };
+      }),
     });
-    if (!us.length) path.append(el("p", "small", "Nothing on this course's path yet."));
-    page.append(path);
-    SK().syncLine(page);
-    // open on where you are: the lesson you just finished, or the next one
-    const to = justEl || curEl;
-    if (to) requestAnimationFrame(() => {
-      const r = to.getBoundingClientRect();
-      if (justEl || r.top > innerHeight * 0.8 || r.bottom < 0) to.scrollIntoView({ block: "center", behavior: justEl ? "smooth" : "auto" });
+    const key = el("div", "ho-key");
+    [["lit", "you know it"], ["dim", "dimming"], ["dark", "not yet"]].forEach(([k, t]) => { const s = el("span", k); s.append(el("i"), document.createTextNode(t)); key.append(s); });
+    left.append(bld, key, el("p", "small ho-tap", "Tap a floor to walk in."));
+    page.append(left);
+    // what to do next, and the floors
+    const side = el("div", "ho-side");
+    side.append(nextCard(course, pk, cur));
+    const acts = el("div", "ho-acts"), fade = fadingIds(course, pk).length, mixes = mixList(course, pk).length, miss = mistakes(course, pk).length;
+    if (fade) acts.append(act("Refresh " + fade, "#/study/" + course + "/l/refresh", "gold", "sun", fade + " fading: a few minutes brings them back"));
+    if (mixes) acts.append(act(mixes === 1 ? "1 mix-up" : mixes + " mix-ups", "#/study/" + course + "/l/mixups", "coral", "swap", "Ideas you keep confusing: tell them apart"));
+    if (miss) acts.append(act("Your mistakes " + miss, "#/study/" + course + "/l/mistakes", "plain", "reset", "What you last got wrong: one more go"));
+    if (acts.children.length) side.append(acts);
+    const list = el("section", "ho-floors");
+    list.append(el("h2", "ho-h", "Floors"));
+    floors.forEach((u) => list.append(floorRow(course, pk, u)));
+    const gen = us.find((u) => !u.n);
+    if (gen) { const a = el("a", "ho-floor lib"); a.href = "#/study/" + course + "/f/0"; const m = el("span", "ho-fn"); m.append(K().icon("layers")); const t = el("span", "ho-ft"); t.append(el("b", null, "The library"), el("small", null, gen.name)); a.append(m, t, K().icon("next")); list.append(a); }
+    side.append(list);
+    // the rest: your notebook, flashcards, and a course's own extras (LDD's exam room)
+    const more = el("div", "ho-more");
+    const nb = Mem.caseAll(course).length;
+    more.append(SK().link("Case notebook" + (nb ? " · " + nb : ""), "#/study/" + course + "/case", "small", "pen"));
+    if (pk.frameworks.length) more.append(SK().link("Framework flashcards", "#/study/" + course + "/cards", "small", "layers"));
+    side.append(more);
+    if (crs.exam?.practise || crs.slides) {
+      const ex = el("div", "ho-extra");
+      ex.append(el("p", "kicker", (crs.code || "This course") + "'s exam room"));
+      const b = el("div", "btns");
+      if (crs.exam?.practise) b.append(SK().link("Practice exams", "#/practise", "small ghost", "doc"));
+      b.append(SK().link("Topics", "#/topics", "small ghost", "search"));
+      if (crs.slides) b.append(SK().link("Slides and book", "#/slides", "small ghost", "book"));
+      ex.append(b); side.append(ex);
+    }
+    page.append(side);
+    w.append(page);
+    SK().syncLine(w);
+  }
+  function act(text, href, cls, ic, title) { const a = SK().link(text, href, "ho-act " + cls, ic); a.title = title; return a; }
+  function nextCard(course, pk, cur) {
+    const box = el("div", "panel ho-next");
+    if (!cur) {
+      box.append(el("p", "kicker", "Every room lit"), el("p", "ho-nt", "You've been through the whole course."),
+        el("p", "small", "What starts to fade comes back in your daily session, and you can refresh it here any time."));
+      return box;
+    }
+    const u = units(pk).find((x) => x.nodes.includes(cur)), st = status(course, cur);
+    box.style.setProperty("--cc", u.n ? SK().color(u.n, pk) : "var(--c9)");
+    box.append(el("p", "kicker ho-k", (u.n ? "Floor " + u.n + " · " : "") + u.name),
+      el("p", "ho-nt", "Next: " + (cur.kind === "lesson" ? "room " + roomNo(u, cur) + ", " + cur.title : nodeTitle(pk, cur) + (cur.kind === "story" ? ", in the lift lobby" : cur.kind === "frameworks" ? ", in the library" : ", on the rooftop"))));
+    box.append(SK().link((st.seen ? "Carry on" : "Start") + " · " + minutes(cur) + " min", "#/study/" + course + "/l/" + cur.id, "primary ho-go", "play"));
+    return box;
+  }
+  function floorRow(course, pk, u) {
+    const a = el("a", "ho-floor"), fc = roomsLit(course, [u]), done = u.nodes.every((nd) => status(course, nd).done), started = u.nodes.some((nd) => status(course, nd).seen);
+    a.href = "#/study/" + course + "/f/" + u.n;
+    a.style.setProperty("--cc", SK().color(u.n, pk));
+    const n = el("span", "ho-fn", String(u.n)), t = el("span", "ho-ft");
+    t.append(el("b", null, u.name), el("small", null, done ? (fc.dim ? "Complete · " + fc.dim + " dimming" : "Complete") : started ? litLine(fc) : fc.rooms + (fc.rooms === 1 ? " room" : " rooms") + " · not started"));
+    a.append(n, t);
+    if (done) { const b = el("span", "ho-done"); b.append(K().icon("check")); a.append(b); }
+    a.append(K().icon("next"));
+    return a;
+  }
+
+  // one floor: its rooms in order, as doors
+  function renderFloor(w, { course, pk }, n) {
+    const u = units(pk).find((x) => String(x.n) === String(n));
+    if (!u) { location.replace("#/study/" + course); return; }
+    const crs = pk.course, cur = current(course, pk), U = SK().unit(pk), fc = roomsLit(course, [u]);
+    w.style.setProperty("--cc", u.n ? SK().color(u.n, pk) : "var(--c9)");
+    const head = el("section", "ho-head ho-fhead");
+    head.append(SK().crumbs("#/study/" + course, (crs.code || crs.name) + " hotel"),
+      el("p", "kicker ho-k", u.n ? "Floor " + u.n + " · " + U + " " + u.n : "The library"), el("h1", null, u.name));
+    if (u.line) head.append(el("p", "ho-line", u.line));
+    const row = el("div", "ho-frow");
+    row.append(el("p", "ho-sum", u.n ? litLine(fc) : u.nodes.length + " sets of frameworks"));
+    if (u.n) row.append(SK().link("Class notes", "#/study/" + course + "/c" + u.n, "small ghost", "book"));
+    head.append(row);
+    w.append(head);
+    const ol = el("ol", "ho-doors");
+    u.nodes.forEach((nd) => {
+      const st = status(course, nd), isCur = cur && cur.id === nd.id;
+      const li = el("li"), a = el("a", "ho-door" + (isCur ? " cur" : "") + (st.done ? " done" : ""));
+      a.href = "#/study/" + course + "/l/" + nd.id;
+      const ds = isCur ? "cur" : st.done ? (st.fading ? "dim" : "lit") : st.part > 0 ? "part" : "dark";
+      const ic = el("span", "ho-dr"); ic.innerHTML = Crab.door(ds, roomNo(u, nd));
+      const t = el("span", "ho-dt");
+      t.append(el("small", null, whereIn(u, nd)), el("b", null, nodeTitle(pk, nd)));
+      a.append(ic, t);
+      const applied = nd.kind === "lesson" && Mem.caseGet(course, nd.parts[0].t.id)?.text?.trim();
+      if (applied) { const p = el("span", "ho-pen"); p.title = "In your case notebook"; p.append(K().icon("pen")); a.append(p); }
+      if (isCur) a.append(el("span", "ho-pill", st.seen ? "Carry on" : "Start"));
+      else a.append(el("span", "ho-st " + ds, st.done ? (st.fading ? "refresh" : nd.flag ? "done" : "lit") : st.part > 0 && !nd.flag ? st.seen + " of " + st.total : minutes(nd) + " min"));
+      a.setAttribute("aria-label", whereIn(u, nd) + ": " + nodeTitle(pk, nd) + (isCur ? ", up next" : st.done ? (st.fading ? ", fading" : ", done") : ""));
+      li.append(a); ol.append(li);
+    });
+    w.append(ol, el("p", "small ho-note", "Any door opens: the order is a suggestion."));
+  }
+
+  /* ---------- mix-ups: two ideas you keep confusing ----------
+     From your own answers (Mem.slip): a round shows the two side by side, then asks you to sort four
+     cards (hotel scenes, lines from the topic, summaries, each with both names blanked) into one or the
+     other. A round without a miss counts as a day you told them apart; three such days settle it. */
+  const itemOf = (pk, id) => pk.items.find((it) => it.id === id);
+  const mixList = (c, pk) => Mem.mixups(c).filter((m) => itemOf(pk, m.a) && itemOf(pk, m.b));
+  const unbold = (t) => String(t || "").replace(/\*\*/g, "");
+  function gistOf(it) {
+    if (it.kind !== "topic") return it.gist || "";
+    const ss = sentences(unbold(it.x?.plain));
+    let out = ss[0] || "";
+    if (words(out).length < 14 && ss[1]) out += " " + ss[1];
+    return out;
+  }
+  function mixSteps(c, pk, m) {
+    const a = itemOf(pk, m.a), b = itemOf(pk, m.b);
+    if (!a || !b) return null;
+    const both = nameOf(a.title) + " " + nameOf(b.title);
+    const blank = (text) => (text ? Today.cue({ title: both, gist: text }) : null);
+    const cuesOf = (it) => {
+      const out = [];
+      if (it.kind === "topic") {
+        const x = it.x || {};
+        if (x.hotel) { const ss = sentences(x.hotel), open = []; for (const s of ss) { if (open.length >= 1 && words(open.join(" ")).length + words(s).length > 45) break; open.push(s); } out.push(blank(open.join(" "))); }
+        sentences(unbold(x.plain)).filter((s) => words(s).length >= 8 && words(s).length <= 40).slice(0, 4).forEach((s) => out.push(blank(s)));
+        if (x.ask?.a) out.push(blank(sentences(unbold(x.ask.a))[0]));
+      } else out.push(blank(it.gist));
+      return shuffle(out.filter(Boolean));
+    };
+    const ca = cuesOf(a), cb = cuesOf(b);
+    if (!ca.length || !cb.length) return null;
+    const raw = [[a, ca[0], 0], [b, cb[0], 1], [a, ca[1], 0], [b, cb[1], 1]].filter((x) => x[1]);
+    // the order: never the same answer three times running
+    const order = shuffle(raw); for (let i = 2; i < order.length; i++) if (order[i][2] === order[i - 1][2] && order[i][2] === order[i - 2][2]) { const j = order.findIndex((x, k) => k > i && x[2] !== order[i][2]); if (j > 0) [order[i], order[j]] = [order[j], order[i]]; }
+    return [
+      { type: "contrast", course: c, pk, a, b, ga: gistOf(a), gb: gistOf(b), pair: m.id, items: [], retryable: false },
+      ...order.map(([it, cue, side], i) => ({ type: "sort", ...base(c, pk, it), a, b, cue, answer: side, pair: m.id, k: i + 1, of: order.length })),
+    ];
+  }
+  // after a round: the pairs you told apart without a miss (first answers only) get a good day
+  function settle(log, pairs) {
+    return pairs.map((m) => {
+      const firsts = log.filter((l) => l.ex.type === "sort" && l.ex.pair === m.id && !l.ex.retry);
+      const ok = firsts.length > 0 && firsts.every((l) => l.g >= 3);
+      const days = ok ? Mem.apart(m.id) : (Mem.mixOf(m.id)?.ok || []).length;
+      return { m, ok, days };
+    });
+  }
+  function settledLines(box, pk, res) {
+    res.forEach(({ m, ok, days }) => {
+      const a = itemOf(pk, m.a), b = itemOf(pk, m.b), names = short(a.title) + " and " + short(b.title);
+      box.append(el("p", "ls-runnote", ok ? (days >= Mem.APART ? "Apart for good: " + names + " have left your list." : "Told apart today: " + names + " (" + days + " of " + Mem.APART + " days).")
+        : "Not quite yet: " + names + " come back another day."));
+    });
+  }
+  function playMixups(w, course, pk, home) {
+    const list = mixList(course, pk).slice(0, 3), steps = list.flatMap((m) => mixSteps(course, pk, m) || []);
+    if (!steps.length) { location.replace(home); return; }
+    Lesson.play(w, {
+      color: "var(--coral)", steps, crab: "done", title: list.length === 1 ? "Mix-up practised!" : "Mix-ups practised!",
+      end(box, res) { settledLines(box, pk, settle(res.log, list)); },
+      done() { location.replace(home); }, exit() { location.replace(home); },
+    });
+  }
+  // what is fading in the course, brought back
+  function playRefresh(w, course, pk, home) {
+    const ids = fadingIds(course, pk);
+    if (!ids.length) { location.replace(home); return; }
+    Lesson.play(w, {
+      color: "var(--gold)", steps: practiceSteps(course, pk, ids, 10), title: "Refreshed!",
+      end(box) { const left = fadingIds(course, pk).length; box.append(el("p", "ls-runnote", left ? left + " still fading: they come back in your daily session." : "Nothing fading in this course now.")); },
+      done() { location.replace(home); }, exit() { location.replace(home); },
     });
   }
 
-  let openPop = null;
-  function closePop() { openPop?.remove(); openPop = null; }
-  document.addEventListener("click", (e) => { if (openPop && !openPop.contains(e.target)) closePop(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && openPop) closePop(); });
-  function popover(li, course, pk, u, nd, st, isCur, ahead) {
-    const was = openPop?.parentElement === li;
-    closePop();
-    if (was) return;
-    const p = el("div", "pa-pop");
-    p.append(el("p", "pa-k", LABEL[nd.kind] + (u.n ? " · " + SK().unit(pk) + " " + u.n : "")), el("h3", null, nd.kind === "lesson" ? "Lesson " + nd.num : nd.title));
-    const ul = el("ul", "pa-what");
-    const add = (t) => ul.append(el("li", null, t));
-    if (nd.kind === "lesson") nd.parts.forEach((x) => add(x.t.title));
-    else if (nd.kind === "frameworks") nd.fws.forEach((f) => add(nameOf(f.title)));
-    else if (nd.kind === "story") add(pk.classes[nd.n].line || "The class, start to finish, with two questions on the way.");
-    else if (nd.kind === "explain") nd.prompts.forEach((q) => { const d = el("div"); d.innerHTML = q.ask; add(d.textContent.trim().replace(/^[“"]|[”"]$/g, "")); });   // from our notes
-    else add("A mix from the whole " + SK().unit(pk).toLowerCase() + ": what you know least comes first.");
-    p.append(ul);
-    p.append(el("p", "pa-meta", "About " + minutes(nd) + " min" + (st.done ? st.fading ? " · fading: worth a refresh" : " · done" : st.seen ? " · " + st.seen + " of " + st.total + " seen" : "")));
-    const label = st.done ? (st.fading ? "Refresh it" : nd.flag ? "Do it again" : "Practise it") : isCur ? (st.seen ? "Carry on" : "Start") : ahead ? "Jump ahead" : "Start";
-    const go = SK().link(label, "#/study/" + course + "/l/" + nd.id, "primary", ahead ? "next" : "play");
-    p.append(go);
-    if (ahead) p.append(el("p", "small", "The path is a suggested order, not a rule."));
-    li.append(p); openPop = p;
-    // keep it on screen
-    requestAnimationFrame(() => { const r = p.getBoundingClientRect(); if (r.bottom > innerHeight - 10) p.scrollIntoView({ block: "nearest", behavior: "smooth" }); });
-    go.focus({ preventScroll: true });
+  /* ---------- apply it: your case notebook ----------
+     After a topic, optionally: how does it show up at your hotel? You write a few lines and tick what
+     your answer did (self-marked). A pack can give a topic its own prompt (x.apply, with {hotel}) and
+     points (x.applyPoints); otherwise a general one. */
+  const hotelOf = (c) => Mem.caseGet(c, "_hotel")?.text?.trim() || "";
+  function applyOf(pk, t, hotel) {
+    const h = hotel || "your hotel", x = t.x || {};
+    const keys = [...new Set([...String(x.plain || "").matchAll(/\*\*(.+?)\*\*/g)].map((m) => m[1]).filter((k) => words(k).length <= 4))].slice(0, 3);
+    const q = x.apply ? String(x.apply).replace(/\{hotel\}/g, h) : "Where does “" + short(t.title) + "” show up at " + h + "? Give one real moment, place or process, and say who would own it.";
+    const points = Array.isArray(x.applyPoints) && x.applyPoints.length ? x.applyPoints : [
+      "Names a real moment, place or process at the hotel",
+      keys.length ? "Uses the idea's own words correctly (" + keys.join(", ") + ")" : "Uses the idea's own words correctly",
+      "Says who owns it, or who would act",
+      "Says what you would change or measure",
+    ];
+    return { q, points };
   }
 
   /* ---------- playing a node ---------- */
   function play(w, { course, pk }, id) {
     const home = "#/study/" + course;
     if (id === "mistakes") return playMistakes(w, course, pk, home);
+    if (id === "mixups") return playMixups(w, course, pk, home);
+    if (id === "refresh") return playRefresh(w, course, pk, home);
     const nd = allNodes(pk).find((x) => x.id === id);
     if (!nd) { location.replace(home); return; }
     const st = status(course, nd), again = st.done && !nd.flag;
@@ -412,7 +553,6 @@ const Path = (() => {
     const unit = units(pk).find((u) => u.nodes.includes(nd)), unitDone = () => unit.nodes.every((x) => status(course, x).done), wasDone = unitDone();
     Lesson.play(w, {
       color, steps,
-      icon: ICON[nd.kind] === "star" ? "trophy" : ICON[nd.kind],
       title: nd.kind === "story" ? "Story done!" : nd.kind === "review" ? SK().unit(pk) + " " + nd.n + " reviewed!" : again ? "Practice done!" : "Lesson complete!",
       end(box) {
         const run = Today.run(Mem.days(), Mem.today());
@@ -421,13 +561,13 @@ const Path = (() => {
         if (nd.flag) Mem.flag(course, nd.id);
         // the last lesson of a class: a moment for the whole class
         if (!wasDone && unitDone()) {
-          box.querySelector("h2").textContent = (unit.n ? SK().unit(pk) + " " + unit.n : "The course's frameworks") + " complete!";
+          box.querySelector("h2").textContent = (unit.n ? "Floor " + unit.n : "The library") + " complete!";
           const u = el("div", "ls-unitdone");
-          u.append(K().icon("trophy"), el("p", null, "Every lesson of “" + unit.name + "” done. From here it comes back in your daily session as it starts to fade."));
+          u.append(K().icon("trophy"), el("p", null, "Every room of “" + unit.name + "” is lit. From here it comes back in your daily session as it starts to fade."));
           box.querySelector(".ls-stats")?.after(u);
         }
         const nx = current(course, pk);
-        if (nx && nx.id !== nd.id) box.append(el("p", "ls-next", "Up next: " + (nx.n ? SK().unit(pk) + " " + nx.n + " · " : "") + (nx.kind === "lesson" ? "Lesson " + nx.num + ": " + nx.title : nx.title)));
+        if (nx && nx.id !== nd.id) { const nu = units(pk).find((x) => x.nodes.includes(nx)); box.append(el("p", "ls-next", "Up next: " + (nu.n ? "floor " + nu.n + ", " : "") + whereIn(nu, nx).toLowerCase() + " · " + nodeTitle(pk, nx))); }
       },
       done() { Study.justDone(nd.id); location.replace(home); },
       exit() { location.replace(home); },
@@ -440,7 +580,7 @@ const Path = (() => {
     if (!ids.length) { location.replace(home); return; }
     const before = ids.length, runBefore = Today.run(Mem.days(), Mem.today()).today;
     Lesson.play(w, {
-      color: "var(--gold)", steps: practiceSteps(course, pk, ids, 12), icon: "reset", title: "Mistakes practised!",
+      color: "var(--gold)", steps: practiceSteps(course, pk, ids, 12), title: "Mistakes practised!",
       end(box) {
         const left = mistakes(course, pk).length, fixed = Math.max(0, before - left);
         box.append(el("p", "ls-runnote", fixed ? fixed + (fixed === 1 ? " mistake" : " mistakes") + " put right." + (left ? " " + left + " still on the list." : " The list is empty.") : left + " still on the list: they come back here and in your daily session."));
@@ -452,7 +592,9 @@ const Path = (() => {
     });
   }
 
-  return { render, play, units, status, current, stepsFor, practiceSteps, teachSteps, topicCheck, sceneEx, clozeEx, matchEx, typeEx, parts, sentences, mistakes };
+  return { render, renderFloor, play, units, status, current, stepsFor, practiceSteps, teachSteps, topicCheck, sceneEx, clozeEx, matchEx, typeEx, parts, sentences, mistakes,
+           mixList, mixSteps, settle, settledLines, applyOf, hotelOf, short, litLine,
+           lit: (c, pk) => roomsLit(c, units(pk).filter((u) => u.n)) };
 })();
 
 window.Path = Path;

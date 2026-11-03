@@ -1,7 +1,8 @@
-/* Study: learn every course of the Master, class by class. The Study home lists the courses (the
-   catalog); you pick one, and it opens on its path (path.js): short lessons, class by class, played
+/* Study: learn every course of the Master, class by class. The Study home (the front desk) opens on
+   today's session, with the crab, then the courses: the current block's first, earlier blocks folded.
+   A course opens as a hotel (path.js): a floor per class, a room per topic, each a short lesson played
    full screen by lesson.js, which also plays the daily session. Each class also has its notes pages
-   ("Class notes" on the path), below. A class opens with its story, then one topic at a time: the idea in plain
+   ("Class notes" on its floor), below. A class opens with its story, then one topic at a time: the idea in plain
    words, a hotel scene, the usual mix-up and where to look it up, next to our notes for that topic.
    Then you explain the class's open questions in your own words (ticking the key points you covered)
    and check yourself with quick questions. No exam format is assumed; a course can add exam practice.
@@ -12,8 +13,10 @@
    course you follow; today.js plans it and keeps the run.
    You can write a note of your own on any topic or framework (only you see it), and search every course
    and your notes from the Study home, or one course from its home.
-   Addresses: #/study (the courses), #/study/today, #/study/ldd (the path), #/study/ldd/l/c6-l2 (a lesson
-   on it), #/study/ldd/c6, #/study/ldd/c6/t/3,
+   Your case notebook (#/study/ldd/case) keeps the topics you've applied to a hotel of your choice.
+   Search (#/study/search) and More (#/more: LDD's exam room, your settings, how it works) are tabs.
+   Addresses: #/study (the courses), #/study/today, #/study/ldd (the hotel), #/study/ldd/f/6 (a floor),
+   #/study/ldd/l/c6-l2 (a lesson), #/study/ldd/l/mixups, …/l/refresh, …/l/mistakes, #/study/ldd/c6, #/study/ldd/c6/t/3,
    #/study/ldd/c6/explain(/2), #/study/ldd/c6/check, #/study/ldd/cards. The older #/study/c6… are LDD's. */
 
 const Study = (() => {
@@ -375,83 +378,227 @@ const Study = (() => {
     if (T.course !== course?.id) T.filter = "all";
     T.course = course?.id || null; T.meta = course; T.data = course ? T.packs.get(course.id) || null : null;
     if (today) return renderToday(w, list);
+    if (seg[0] === "search") return renderSearch(w);
     if (!course) return renderPicker(w);
     if (course.status !== "ready") return renderComing(w, course);
     const rest = seg.slice(1), m = /^c(\d+)$/.exec(rest[0] || "");
     const ctx = { course: course.id, pk: T.data, meta: course };
     if (rest[0] === "cards" && T.data.frameworks.length) renderCards(w);
-    else if (rest[0] === "l" && rest[1]) { store.set("study:last", course.id + "/path"); Path.play(w, ctx, rest[1]); }
+    else if (rest[0] === "l" && rest[1]) Path.play(w, ctx, rest[1]);
+    else if (rest[0] === "f" && rest[1] != null) Path.renderFloor(w, ctx, rest[1]);
+    else if (rest[0] === "case") renderCase(w);
     else if (m && T.data.classes[m[1]]) { store.set("study:last", [course.id, ...rest].join("/")); renderClass(w, +m[1], rest.slice(1)); }
     else {
-      store.set("study:last", course.id + "/path");
       const just = T.justDone; T.justDone = null;
       Path.render(w, { ...ctx, justDone: just });
     }
   }
 
-  // Where you were: "ldd/c4/t/2" (older ones, without the course, are LDD's).
-  function whereLabel(path) {
-    let p = String(path || "");
-    if (/^c\d/.test(p)) p = "ldd/" + p;
-    const onPath = /^([a-z0-9-]+)\/path$/.exec(p), pc = onPath && T.cat?.find((c) => c.id === onPath[1] && c.status === "ready");
-    if (pc) return { href: "#/study/" + pc.id, course: pc, text: [pc.code, pc.name].filter(Boolean).join(" · "), step: "Your path: the next lesson is marked" };
-    const m = /^([a-z0-9-]+)\/c(\d+)(?:\/(t|explain|check)(?:\/(\d+|done))?)?$/.exec(p);
-    const course = m && T.cat?.find((c) => c.id === m[1] && c.status === "ready");
-    const k = course?.classes.find((x) => x.n === +m[2]);
-    if (!k) return null;
-    const card = m[3] === "t" && m[4] && m[4] !== "done" ? T.packs.get(course.id)?.classes[m[2]]?.cards[+m[4] - 1] : null;
-    const step = !m[3] ? "The story" : m[3] === "explain" ? "Explain" : m[3] === "check" ? "Check"
-      : m[4] && m[4] !== "done" ? "Topic " + m[4] + (card ? ": " + card.title : "") : "Topics";
-    return { href: "#/study/" + p, course, text: (course.code ? course.code + " · " : "") + (course.unit || "Class") + " " + m[2] + " · " + k.name, step };
+  /* ---------- the front desk: Study's home ----------
+     Today first, with the crab. Then the courses of the block you're in, the ones that run across
+     blocks, and earlier blocks folded away (open when the current block has nothing ready yet). The
+     current block is the latest one in the course list. Search has its own tab. */
+  function blocksOf() {
+    const all = [...new Set(T.cat.map((c) => c.block))], single = all.filter((b) => /^[A-Z]$/.test(b)).sort();
+    const now = single[single.length - 1] || null;
+    return { now, across: all.filter((b) => !/^[A-Z]$/.test(b)), past: single.filter((b) => b !== now).reverse() };
   }
-  function continueBox(w, only) {
-    const last = whereLabel(store.get("study:last"));
-    if (!last || (only && last.course.id !== only)) return null;
-    const box = el("div", "panel st-continue"), t = el("div", "t");
-    t.append(el("span", "kicker", "Carry on where you were"), el("b", null, last.text), el("span", "small", last.step));
-    box.append(t, link("Continue", last.href, "primary", "arrow", true));
-    w.append(box);
-    return last;
-  }
-
-  /* ---------- the courses ---------- */
   function renderPicker(w) {
-    const hero = el("section", "st-hero");
-    hero.append(el("p", "kicker", "Study"), el("h1", null, "What do you want to learn?"),
-      el("p", "lede", "Every course of the Master, built from the lecturers' material, what was said in class and research we checked ourselves. Pick a course and take it class by class. What you know is remembered per course, and the app shows you what's starting to fade."));
-    w.append(hero);
-    const page = el("div", "st-page");
-    findBox(w, T.cat.filter((c) => c.status === "ready").map((c) => c.id), page);
+    w.append(el("h1", "sr", "Study"));
+    const page = el("div", "st-page fd");
     todayCard(page);
-    const last = continueBox(page);
-    if (last) pack(last.course.id).catch(() => {});   // likely your next click: open it in the background
-    [...new Set(T.cat.map((c) => c.block))].forEach((b) => {
-      const s = el("section", "sect");
-      s.append(K().h2((b.includes("–") ? "Blocks " : "Block ") + b));
-      const grid = el("div", "st-grid st-courses");
-      T.cat.filter((c) => c.block === b).forEach((c) => grid.append(courseTile(c)));
-      s.append(grid); page.append(s);
+    const { now, across, past } = blocksOf(), tiles = [];
+    const grid = (list) => { const g = el("div", "fd-grid"); list.forEach((c) => { const t = courseTile(c); tiles.push([c, t]); g.append(t); }); return g; };
+    const nowReady = now && T.cat.some((c) => c.block === now && c.status === "ready");
+    if (now) { const s = el("section", "fd-sec"); s.append(el("h2", "fd-h", "Block " + now + " · now"), grid(T.cat.filter((c) => c.block === now))); page.append(s); }
+    across.forEach((b) => { const s = el("section", "fd-sec"); s.append(el("h2", "fd-h", "Across blocks " + b), grid(T.cat.filter((c) => c.block === b))); page.append(s); });
+    past.forEach((b, i) => {
+      const list = T.cat.filter((c) => c.block === b), d = el("details", "fd-past"), sm = el("summary");
+      sm.append(el("span", "fd-h", "Block " + b + " · done"), el("small", null, list.map((c) => c.code || c.name).join(", ")));
+      d.append(sm, grid(list));
+      if (!nowReady && i === 0) d.open = true;
+      page.append(d);
     });
+    const about = el("p", "small fd-about"); const al = el("a", null, "How Check-in works"); al.href = "#/more"; about.append(al);
+    page.append(about);
     syncLine(page);
-    if (runOff()) { const p = el("p", "small"); p.append(document.createTextNode("Your run is hidden. "), K().textBtn("Show it again", () => { store.set("study:run:off", false); K().render(); })); page.append(p); }
+    w.append(page);
+    // the tiles show rooms lit once their courses are open (the Today card opens them anyway)
+    const ready = T.cat.filter((c) => c.status === "ready");
+    Promise.all(ready.map((c) => pack(c.id))).then(() => tiles.forEach(([c, t]) => { if (t.isConnected && c.status === "ready") t.replaceWith(courseTile(c)); })).catch(() => {});
   }
   function courseTile(c) {
-    const ready = c.status === "ready";
-    const a = el(ready ? "a" : "div", "panel st-tile st-course" + (ready ? "" : " coming"));
+    const ready = c.status === "ready", pk = ready ? T.packs.get(c.id) : null;
+    const a = el(ready ? "a" : "div", "fd-tile" + (ready ? "" : " coming"));
     if (ready) a.href = "#/study/" + c.id;
-    const th = el("div", "th");
-    if (c.code) th.append(el("span", "chip", c.code));
-    th.append(el("b", null, c.name));
-    a.append(th);
-    const meta = [c.lecturer, ready ? c.classes.length + " " + unitsOf(c.unit || "Class") : null].filter(Boolean).join(" · ");
-    if (meta) a.append(el("p", "ln", meta));
-    if (ready) {
-      const sm = Mem.summary(c.id), ms = el("div", "st-meters");
-      ms.append(meter("Known", sm.known, c.items));
-      a.append(ms, el("p", "small", !sm.seen ? "Not started yet" : sm.fading ? sm.fading + " fading: worth a look today" : "Nothing fading right now"));
-    } else a.append(el("span", "st-state", "Coming"), el("p", "small", c.note || ""));
+    const mh = el("span", "fd-mini"), t = el("span", "fd-t"), name = el("span", "fd-name");
+    if (c.code) name.append(el("span", "chip", c.code));
+    name.append(el("b", null, c.name));
+    let line;
+    if (pk) {
+      const r = Path.lit(c.id, pk), sm = Mem.summary(c.id);
+      line = r.lit || sm.seen ? Path.litLine(r) : r.rooms + " rooms on " + pk.nums.length + " floors · not started";
+      mh.innerHTML = Crab.mini(pk.nums.length, r.rooms ? r.lit / r.rooms : 0);
+    } else if (ready) {
+      const sm = Mem.summary(c.id);
+      line = sm.seen ? sm.known + " of " + c.items + " known" : c.classes.length + " " + unitsOf(c.unit || "Class") + " · not started";
+      mh.innerHTML = Crab.mini(c.classes.length, c.items ? sm.known / c.items : 0);
+    } else { line = c.note || "Coming"; mh.innerHTML = Crab.mini(0, 0, true); }
+    t.append(name, el("small", "fd-line", line));
+    a.append(mh, t);
+    if (ready) a.append(K().icon("next")); else a.append(el("span", "fd-soon", "Coming"));
     return a;
   }
+
+  /* ---------- search: its own tab ---------- */
+  function renderSearch(w) {
+    const head = el("section", "st-head");
+    head.append(el("p", "kicker", "Search"), el("h1", null, "Find anything"));
+    w.append(head);
+    const page = el("div", "st-page");
+    const input = findBox(w, T.cat.filter((c) => c.status === "ready").map((c) => c.id), page);
+    if (!T.find.q) setTimeout(() => input.focus({ preventScroll: true }), 60);
+  }
+
+  /* ---------- More: a course's extras, your settings, about ---------- */
+  function more(box) {
+    box.textContent = "";
+    const w = el("div", "study more"); box.append(w);
+    const head = el("section", "st-head");
+    head.append(el("p", "kicker", "More"), el("h1", null, "Check-in"));
+    w.append(head);
+    const sec = (title, kick) => { const s = el("section", "panel mo-sec"); if (kick) s.append(el("p", "kicker", kick)); s.append(el("h2", null, title)); w.append(s); return s; };
+    const ex = sec("Digital Developments: the exam room", "Block A · LDD");
+    ex.append(el("p", "small", "The lecturer's trial exam, three mock exams and the drill; every concept from the questions; the class decks and the book."));
+    const b = el("div", "btns");
+    b.append(link("Practice exams", "#/practise", "small ghost", "doc"), link("Topics", "#/topics", "small ghost", "search"), link("Slides and book", "#/slides", "small ghost", "book"));
+    ex.append(b);
+    const you = sec("Your study");
+    const toggle = (label, key, on) => {
+      const lab = el("label", "mo-tog"), cb = el("input"); cb.type = "checkbox"; cb.checked = on();
+      cb.addEventListener("change", () => store.set(key.k, key.flip ? !cb.checked : cb.checked));
+      lab.append(cb, el("span", null, label)); you.append(lab);
+    };
+    toggle("Show my run of study days", { k: "study:run:off", flip: true }, () => !runOff());
+    toggle("Ask me to apply each new topic to my hotel, at the end of its lesson", { k: "study:apply:off", flip: true }, () => !store.get("study:apply:off"));
+    toggle("Sound in lessons", { k: "study:sound" }, () => !!store.get("study:sound"));
+    const ab = sec("How Check-in works"); ab.id = "about";
+    [
+      "Every course of the Master, built from the lecturers' material, what was said in class and research we checked ourselves. Each course is a hotel: a floor per class, a room per topic. A room's window lights up once you know it and dims as it starts to fade.",
+      "Today's session mixes what is fading with something new, in 5, 10 or 15 minutes. A day counts for your run after 5 cards; one missed day is a rest and keeps the run.",
+      "When you confuse two ideas twice, they become a mix-up: a quick round to tell them apart, until you've done it on three different days. After a topic you can apply it to a hotel of your choice; your answers collect in a case notebook per course.",
+      "The crab carries a hotel for a shell and moves into a bigger one each block. Nobody is ranked, and nothing here is marked by AI: you mark your own written answers.",
+    ].forEach((t) => ab.append(el("p", null, t)));
+    syncLine(ab);
+  }
+
+  /* ---------- your case notebook ----------
+     The ideas of a course applied to one hotel: what you wrote and the points you ticked. Only you see
+     it (Mem keeps it with your progress). Copy it all as text for slides or a report. */
+  function applyBox(course, pk, t) {
+    const box = el("div", "ap-box"), q = el("h2", "ls-q ap-q"), list = el("ul", "ap-points"), on = [];
+    const entry = Mem.caseGet(course, t.id) || {}, ticks = new Set(entry.ticks || []);
+    let hotel = Path.hotelOf(course);
+    const hl = el("label", "ap-hotel"), hin = el("input");
+    hin.type = "text"; hin.maxLength = 80; hin.value = hotel; hin.autocomplete = "off";
+    hin.placeholder = "Your workplace, the case company, a hotel you know";
+    hl.append(el("span", "kicker", "Your hotel"), hin);
+    hin.addEventListener("input", () => { hotel = hin.value.trim(); Mem.caseSet(course, "_hotel", { text: hotel }); paint(); });
+    const ta = el("textarea", "ls-write ap-ta"); ta.rows = 4; ta.maxLength = Mem.CASE_MAX; ta.value = entry.text || "";
+    ta.placeholder = "A few lines: where it shows up, who owns it, what you'd change."; ta.setAttribute("aria-label", "How it shows up at your hotel");
+    let tm = null;
+    const save = () => { clearTimeout(tm); if (!ta.value.trim() && !Mem.caseGet(course, t.id)?.text) return; Mem.caseSet(course, t.id, { text: ta.value, ticks: [...ticks] }); };
+    ta.addEventListener("input", () => { on.forEach((f) => f()); clearTimeout(tm); tm = setTimeout(save, 400); });
+    ta.addEventListener("blur", save);
+    function paint() {
+      const a = Path.applyOf(pk, t, hotel);
+      q.textContent = a.q; list.textContent = "";
+      a.points.forEach((p, k) => {
+        const lab = el("label"), cb = el("input"); cb.type = "checkbox"; cb.checked = ticks.has(k);
+        cb.addEventListener("change", () => { if (cb.checked) ticks.add(k); else ticks.delete(k); save(); });
+        lab.append(cb, el("span", null, p));
+        const li = el("li"); li.append(lab); list.append(li);
+      });
+    }
+    paint();
+    box.append(hl, q, ta, el("p", "kicker ap-did", "Did your answer…"), list, el("p", "small", "Only you see it. It goes in your case notebook for this course."));
+    return { el: box, save, text: () => ta.value.trim(), focus: hotel ? ta : hin, onInput: (f) => on.push(f) };
+  }
+  function renderCase(w) {
+    const pk = T.data, c = T.course, crs = pk.course;
+    const head = el("section", "st-head");
+    head.append(crumbs(base(), (crs.code || crs.name) + " hotel"), el("p", "kicker", "Case notebook · " + (crs.code || crs.name)), el("h1", null, "Your case notebook"),
+      el("p", "line", "Ideas from this course, applied to one hotel. Only you see it. Copy it into slides or a report when you need it."));
+    w.append(head);
+    const page = el("div", "st-page cn");
+    // the hotel
+    const hl = el("label", "panel cn-hotel"), hin = el("input");
+    hin.type = "text"; hin.maxLength = 80; hin.value = Path.hotelOf(c); hin.autocomplete = "off";
+    hin.placeholder = "Your workplace, the case company, a hotel you know";
+    hl.append(el("span", "kicker", "Your hotel"), hin);
+    hin.addEventListener("input", () => Mem.caseSet(c, "_hotel", { text: hin.value.trim() }));
+    page.append(hl);
+    const topics = pk.items.filter((it) => it.kind === "topic"), byId = Object.fromEntries(topics.map((it) => [it.id, it]));
+    const done = Mem.caseAll(c).filter((e) => byId[e.id]);
+    const tools = el("div", "btns cn-tools");
+    if (done.length) {
+      const copy = K().button("Copy it all as text", "small", async () => {
+        const text = asText(c, pk, done, byId);
+        try { await navigator.clipboard.writeText(text); copy.lastChild.textContent = "Copied"; }
+        catch (e) { const ta = el("textarea", "cn-copy"); ta.value = text; ta.readOnly = true; copy.after(ta); ta.select(); copy.lastChild.textContent = "Select and copy below"; }
+        setTimeout(() => { if (copy.isConnected) copy.lastChild.textContent = "Copy it all as text"; }, 2500);
+      }, "doc");
+      tools.append(copy);
+    }
+    page.append(tools);
+    // what you've applied, class by class
+    const U = unit(pk);
+    pk.nums.forEach((n) => {
+      const mine = done.filter((e) => byId[e.id].class === n);
+      if (!mine.length) return;
+      const s = el("section", "cn-sec");
+      s.style.setProperty("--cc", color(n, pk));
+      s.append(el("h2", "cn-h", "Floor " + n + " · " + pk.classes[n].name));
+      mine.forEach((e) => s.append(caseEntry(c, pk, byId[e.id], e)));
+      page.append(s);
+    });
+    // what you've learnt and could apply
+    const open = topics.filter((it) => Mem.get(c, it.id) && !done.some((e) => e.id === it.id));
+    if (open.length) {
+      const s = el("section", "cn-sec");
+      s.append(el("h2", "cn-h", done.length ? "Learnt, not applied yet" : "Topics you've learnt"));
+      const ul = el("div", "cn-open");
+      open.forEach((it) => {
+        const row = el("div", "cn-row"), t2 = el("span", null, it.title);
+        const go = K().button("Apply it", "small ghost", () => { const ed = applyBox(c, pk, it), box = el("div", "panel cn-entry"); box.append(el("h3", null, it.title), ed.el); row.replaceWith(box); ed.focus.focus(); }, "pen");
+        const chip = el("span", "chip", unitShort(pk) + it.class); chip.style.setProperty("--cc", color(it.class, pk));
+        row.append(chip, t2, go); ul.append(row);
+      });
+      s.append(ul); page.append(s);
+    }
+    if (!done.length && !open.length) page.append(el("p", "panel cn-empty", "Learn a topic first. At the end of each new topic's lesson you can apply it to your hotel, and it lands here."));
+    w.append(page);
+    syncLine(w);
+  }
+  function caseEntry(c, pk, it, e) {
+    const a = el("article", "panel cn-entry"), n = Path.applyOf(pk, it, Path.hotelOf(c)).points.length;
+    a.append(el("h3", null, it.title), el("p", "cn-text", e.text), el("p", "small", e.ticks.length + " of " + n + " points ticked"));
+    const b = el("div", "btns");
+    b.append(K().button("Edit", "small ghost", () => { const ed = applyBox(c, pk, it); a.textContent = ""; a.append(el("h3", null, it.title), ed.el); ed.focus.focus(); }, "pen"));
+    a.append(b);
+    return a;
+  }
+  function asText(c, pk, done, byId) {
+    const crs = pk.course, hotel = Path.hotelOf(c), out = ["Case notebook · " + (crs.code ? crs.code + " " : "") + crs.name + (hotel ? " · " + hotel : ""), ""];
+    pk.nums.forEach((n) => {
+      const mine = done.filter((e) => byId[e.id].class === n);
+      if (!mine.length) return;
+      out.push(unit(pk) + " " + n + " · " + pk.classes[n].name);
+      mine.forEach((e) => out.push("• " + byId[e.id].title, ...e.text.trim().split("\n").map((l) => "  " + l), ""));
+    });
+    return out.join("\n").trim() + "\n";
+  }
+
   function renderComing(w, c) {
     const head = el("div", "st-head");
     head.append(crumbs("#/study", "All courses"), el("p", "kicker", (c.code ? c.code + " · " : "") + "Block " + c.block), el("h1", null, c.name),
@@ -831,30 +978,51 @@ const Study = (() => {
     const load = () => mixPacks().then((list) => { if (box.isConnected) fillToday(box, list, load); }).catch(() => box.remove());
     load();
   }
+  // today's mix-up, if there is one you haven't already told apart today
+  function mixFor(list) {
+    for (const { id, pack: pk } of list) {
+      const m = Path.mixList(id, pk).find((x) => !x.today);
+      if (m && Path.mixSteps(id, pk, m)) return { course: id, pk, m };
+    }
+    return null;
+  }
   function fillToday(box, list, load) {
     box.textContent = "";
-    const run = Today.run(Mem.days(), Mem.today());
-    const top = el("div", "td-top"), body = el("div", "td-body");
-    top.append(el("p", "kicker", "Today"));
-    {
-      top.append(sizes(() => fillToday(box, list, load)));
-      const p = (T.plan = Today.plan(list, mins()));
-      if (!p.steps.length) body.append(el("h2", null, "All caught up"), el("p", "td-what", "Nothing is fading, and you've seen everything in your courses so far."));
-      else {
-        body.append(el("h2", null, run.today ? "Another " + mins() + " minutes?" : "Your " + mins() + " minutes for today"));
-        const bits = [p.due && p.due + " fading", p.fresh && p.fresh + " new"].filter(Boolean);
-        body.append(el("p", "td-what", plural(p.steps.length, "card") + ": " + bits.join(", ") + "."));
-        if (p.next) {
-          const x = p.next, c = x.pack.classes[x.it.class];
-          body.append(el("p", "small", "New from " + [list.length > 1 ? x.pack.course.code : "", c ? unit(x.pack) + " " + x.it.class + ", " + c.name : x.pack.course.name].filter(Boolean).join(" · ") + "."));
-        }
-        const b = el("div", "btns");
-        b.append(K().button("Start", "primary", () => K().go("study/today"), "play"));
-        body.append(b);
+    const run = Today.run(Mem.days(), Mem.today()), mx = mixFor(list);
+    const p = (T.plan = Today.plan(list, mx ? mins() - 1 : mins()));
+    const any = p.steps.length || mx;
+    // the crab: its flag shows your run once today counts, it naps after a rest day, otherwise it waits
+    const state = run.today && !runOff() ? "run" : run.keep && !runOff() ? "rest" : "idle";
+    const say = !any ? "All caught up. Nothing is fading, and you've seen everything so far."
+      : run.today ? "That's today counted. Anything more is a bonus."
+      : state === "rest" ? "Yesterday was a rest day. Your run is still on."
+      : p.due ? mins() + " minutes today. What's fading comes first."
+      : mins() + " minutes today, with something new.";
+    const top = el("div", "td-top"), greet = el("div", "td-greet"), crab = el("div", "td-crab");
+    crab.innerHTML = Crab.svg(state, { count: run.count });
+    greet.append(crab, el("p", "td-say", say));
+    top.append(el("p", "kicker", "Today · " + new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })), sizes(() => fillToday(box, list, load)));
+    const body = el("div", "td-body");
+    if (any) {
+      body.append(el("h2", null, run.today ? "Another " + mins() + " minutes?" : "Your " + mins() + " minutes"));
+      const ul = el("ul", "td-list"), li = (ic, cls, b, rest) => { const x = el("li"); x.append(el("i", cls, ic), el("b", null, b), el("span", null, rest)); ul.append(x); };
+      const many = list.length > 1;
+      if (p.due) {
+        const by = [...new Set(p.steps.filter((s2) => s2.why === "fading").map((s2) => s2.pack.course.code || s2.pack.course.name))];
+        li("◐", "gold", p.due + " to refresh", many ? by.join(", ") : "fading");
       }
-      const mr = mixRow(load); if (mr) body.append(mr);
+      if (p.fresh) {
+        const x = p.next, c = x && x.pack.classes[x.it.class];
+        li("+", "acc", p.fresh + " new", x ? [many ? x.pack.course.code : "", c ? unit(x.pack) + " " + x.it.class : ""].filter(Boolean).join(" · ") : "");
+      }
+      if (mx) { const nm = (id) => Path.short(mx.pk.items.find((it) => it.id === id).title); li("⇄", "coral", "1 mix-up", nm(mx.m.a) + " ↔ " + nm(mx.m.b)); }
+      body.append(ul);
+      const b = el("div", "btns");
+      b.append(K().button("Start", "primary td-start", () => K().go("study/today"), "play"));
+      body.append(b);
     }
-    box.append(top, body);
+    const mr = mixRow(load); if (mr) body.append(mr);
+    box.append(top, greet, body);
     if (!runOff()) box.append(runRow(run));
   }
   function sizes(onChange) {
@@ -881,7 +1049,7 @@ const Study = (() => {
     head.append(el("b", null, run.count ? run.count + "-day run" : "No run yet"));
     if (run.best > run.count) head.append(el("span", null, " · best " + run.best));
     const left = Today.DAY_MIN - run.cardsToday;
-    const say = run.today ? (justCounted ? "Today counts." : "Today counts. Anything more is a bonus.")
+    const say = run.today ? "Today counts."
       : run.cardsToday ? plural(left, "more card") + " and today counts."
       : run.keep ? "A few minutes today keep your run going."
       : run.count ? "Today can be a rest day: one missed day doesn't break your run."
@@ -895,15 +1063,15 @@ const Study = (() => {
 
   // The daily session, in the lesson player: what is fading, then new things from your path.
   function renderToday(w, list) {
-    const p = Today.plan(list, mins());
-    if (!p.steps.length) {
+    const mx = mixFor(list), p = Today.plan(list, mx ? mins() - 1 : mins());
+    if (!p.steps.length && !mx) {
       const d = el("div", "panel st-done");
       d.append(el("p", "kicker", "Today"), el("h2", null, "All caught up"), el("p", "small", "Nothing is fading, and you've seen everything in your courses so far."));
       const b = el("div", "btns"); b.append(link("Back to Study", "#/study", "primary", "back")); d.append(b);
       w.append(d); return;
     }
     const before = Today.run(Mem.days(), Mem.today()).today, many = list.length > 1;
-    // a new topic is taught in small steps, as on the path; a fading one comes back from one of three sides
+    // a new topic is taught in small steps, as in its room; a fading one comes back from one of three sides
     const steps = p.steps.flatMap((st) => {
       const tag = (x, why) => ({ ...x, why, r: st.r, showCourse: many });
       if (st.it.kind === "topic" && st.kind === "learn") return Path.teachSteps(st.course, st.pack, st.it).map((x, i) => tag(x, i ? null : st.why));
@@ -914,10 +1082,13 @@ const Study = (() => {
         retryable: st.kind === "mcq" || st.kind === "learn" ? false : undefined,
       }];
     });
+    const mixSteps = mx ? Path.mixSteps(mx.course, mx.pk, mx.m).map((x) => ({ ...x, showCourse: many })) : [];
+    if (mixSteps.length) steps.splice(Math.min(2, steps.length), 0, ...mixSteps);
     Lesson.play(w, {
-      color: "var(--accent)", steps, icon: "bolt", title: "Today's session done!",
+      color: "var(--accent)", steps, title: "Today's session done!",
       end(box, res) {
         const run = Today.run(Mem.days(), Mem.today()), justCounted = run.today && !before;
+        if (mx) Path.settledLines(box, mx.pk, Path.settle(res.log, [mx.m]));
         if (justCounted) box.querySelector("h2").textContent = "Done, and today counts!";
         if (!runOff()) box.append(runRow(run, justCounted));
         // where each course in the mix stands, and what comes back tomorrow
@@ -986,10 +1157,10 @@ const Study = (() => {
   });
 
   return {
-    render,
+    render, more,
     justDone(id) { T.justDone = id; },
     _pack: (id) => T.packs.get(id),   // for testing from the console: a course already opened
-    kit: { rich, sec, link, meter, crumbs, unit, unitShort, color, chipOf, whereLine, notesDoc, noteBox, noteShow, findBox, syncLine, runRow },
+    kit: { rich, sec, link, meter, crumbs, unit, unitShort, color, chipOf, whereLine, notesDoc, noteBox, noteShow, findBox, syncLine, runRow, applyBox },
   };
 })();
 
