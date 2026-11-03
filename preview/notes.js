@@ -58,7 +58,23 @@ function badge(name) {
   const map = { pdf: "PDF", doc: "DOC", docx: "DOC", ppt: "PPT", pptx: "PPT", xls: "XLS", xlsx: "XLS", csv: "CSV", txt: "TXT", md: "MD", png: "IMG", jpg: "IMG", jpeg: "IMG", gif: "IMG", webp: "IMG", heic: "IMG", mp4: "VID", mov: "VID", mp3: "AUD", m4a: "AUD", zip: "ZIP", key: "KEY", pages: "PAGES", numbers: "NUM" };
   return map[ext] || "FILE";
 }
-function gate(t, p) { $("#notesview").hidden = true; $("#practise").hidden = true; $("#tabs").hidden = true; $("#gate").hidden = false; $("#gateT").textContent = t; $("#gateP").textContent = p; }
+function gate(t, p, paste) {
+  $("#notesview").hidden = true; $("#practise").hidden = true; $("#tabs").hidden = true; $("#gate").hidden = false; $("#gateT").textContent = t; $("#gateP").textContent = p;
+  $("#gate .gate-paste")?.remove();
+  if (!paste) return;
+  // a home-screen app (on an iPhone) keeps its own storage: paste the invitation link here, once
+  const f = el("form", "gate-paste"), i = el("input"), b = el("button", "btn primary small", "Open");
+  i.type = "text"; i.inputMode = "url"; i.autocapitalize = "off"; i.spellcheck = false; i.placeholder = "Paste the invitation link"; i.setAttribute("aria-label", "The invitation link"); i.autocomplete = "off";
+  const msg = el("small");
+  f.append(i, b, msg);
+  f.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const m = i.value.match(/[#&?]g=([A-Za-z0-9_-]{8,64})/);
+    if (!m) { msg.textContent = "That doesn't look like the invitation link: it ends in #g= and a code."; return; }
+    store.set("g", m[1]); if (!/^#\/study\//.test(location.hash)) location.hash = "#/study"; location.reload();
+  });
+  $("#gate").append(f);
+}
 function upmsg(t, warn) { const m = $("#upmsg"); m.textContent = t; m.classList.toggle("warn", !!warn); }
 
 /* ---------- tabs (the router in practise.js decides which one shows) ---------- */
@@ -387,7 +403,7 @@ async function write(args) {
 /* ---------- loading ---------- */
 async function refresh() {
   const r = await rpc("list_pages", { g: S.g });
-  if (r && r.error === "bad_group") { gate("This invitation link isn't valid", "Ask Antonis for the current link."); return false; }
+  if (r && r.error === "bad_group") { store.del("g:ok"); gate("This invitation link isn't valid", "Ask Antonis for the current link, and paste it here.", true); return false; }
   const next = new Map();
   (Array.isArray(r) ? r : []).forEach((p) => { if (p && p.id) next.set(p.id, p); });
   S.pages = next;
@@ -418,11 +434,16 @@ async function start() {
   const m = location.hash.match(/[#&]g=([A-Za-z0-9_-]{8,64})/);
   if (m) { store.set("g", m[1]); history.replaceState(null, "", location.pathname + location.search); }
   S.g = store.get("g");
-  if (!S.g) { gate("Open the invitation link", "This page opens from the link Antonis sent you."); return; }
+  if (!S.g) { gate("Open the invitation link", "This page opens from the link Antonis sent you. On your home screen? Paste the link here once.", true); return; }
 
   try {
     if (!(await refresh())) return;
-  } catch (e) { gate("Can't reach the notes", "Check your internet connection and reload the page."); return; }
+    store.set("g:ok", S.g);   // this code has worked here: next time, Study can open without a connection
+  } catch (e) {
+    // offline: Study works from what this device keeps once the code has worked here; the notes wait
+    if (store.get("g:ok") !== S.g) { gate("Can't reach the notes", "Check your internet connection and reload the page."); return; }
+    S.offline = true;
+  }
 
   const saved = store.get("me");
   if (saved && saved.id && saved.token) {

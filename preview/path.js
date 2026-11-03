@@ -422,7 +422,9 @@ const Path = (() => {
     const run = Today.run(Mem.days(), Mem.today()), c = roomsLit(course, floors), keys = new Set(claimKeys(course, pk));
     const reno = /^renovate-(\d+)$/.exec(justDone || "")?.[1];
     const head = el("section", "ho-head");
-    head.append(SK().crumbs("#/study", "All courses"), el("p", "kicker", [crs.code, crs.lecturer].filter(Boolean).join(" · ")), el("h1", null, crs.full || crs.name), el("p", "ho-sum", litLine(c)));
+    const hsum = el("p", "ho-sum", litLine(c)), sl = el("a", "ho-starl"); sl.href = "#/study/plaques"; sl.title = "This hotel's stars: see your plaques";
+    sl.append(Awards.starRow(Awards.stars(course, pk))); hsum.append(sl);
+    head.append(SK().crumbs("#/study", "All courses"), el("p", "kicker", [crs.code, crs.lecturer].filter(Boolean).join(" · ")), el("h1", null, crs.full || crs.name), hsum);
     if (crs.note) head.append(el("p", "small st-note", crs.note));
     if (run.welcome && c.dim) head.append(el("p", "ho-back", "Welcome back. Some lights dimmed while you were away: that's how memory works, and what you bring back after a gap stays longer."));
     w.append(head);
@@ -442,7 +444,7 @@ const Path = (() => {
     });
     const key = el("div", "ho-key");
     [["lit", "you know it"], ["dim", "dimming"], ["dark", "not yet"], ...(keys.size ? [["gold", "your key"]] : [])].forEach(([k, t]) => { const s = el("span", k); s.append(el("i"), document.createTextNode(t)); key.append(s); });
-    left.append(bld, key, el("p", "small ho-tap", "Tap a floor to walk in."));
+    left.append(bld, key, el("p", "small ho-tap", "Tap a floor of the building to walk in."));
     page.append(left);
     // what to do next, and the floors
     const side = el("div", "ho-side");
@@ -459,9 +461,14 @@ const Path = (() => {
     if (mixL.length) { const m0 = mixL[0], nm = (id) => short(itemOf(pk, id)?.title || ""); row("swap", "coral", mixL.length === 1 ? "A mix-up to sort out" : mixL.length + " mix-ups to sort out", nm(m0.a) + " ↔ " + nm(m0.b), "#/study/" + course + "/l/mixups"); }
     if (miss) row("reset", "plain", "Your mistakes", (miss <= 9 ? miss + " to put right" : "A few at a time") + ": one more go", "#/study/" + course + "/l/mistakes");
     if (desk.children.length) { desk.prepend(el("p", "kicker ho-dk", "Also at the front desk")); side.append(desk); }
+    side.append(SK().readyBox(course, meta, pk));
     side.append(keyRing(keys, c.rooms));
-    const list = el("section", "ho-floors");
-    list.append(el("h2", "ho-h", "Floors"));
+    // the floors as a list: the building above is the way in, so the list stays folded until you open it
+    const list = el("details", "ho-floors"), sum = el("summary", "ho-h");
+    list.open = !!store.get("study:floors:open");
+    list.addEventListener("toggle", () => store.set("study:floors:open", list.open));
+    sum.append(document.createTextNode("Every floor, as a list"), el("small", null, (floors.length + planned.length) + (floors.length + planned.length === 1 ? " floor" : " floors")));
+    list.append(sum);
     floors.forEach((u) => list.append(floorRow(course, pk, u, keys, freshClass(pk, meta, u.n))));
     planned.forEach((k) => {
       const r = el("div", "ho-floor planned"), n = el("span", "ho-fn", String(k.n)), t = el("span", "ho-ft");
@@ -651,7 +658,12 @@ const Path = (() => {
     if (!steps.length) { location.replace(home); return; }
     Lesson.play(w, {
       color: "var(--coral)", steps, crab: "done", title: list.length === 1 ? "Mix-up practised!" : "Mix-ups practised!",
-      end(box, res) { settledLines(box, pk, settle(res.log, list)); },
+      end(box, res) {
+        settledLines(box, pk, settle(res.log, list));
+        const m0 = list[0], b = el("div", "btns ls-passbtns");
+        b.append(passButton(course, "mix", [m0.a, m0.b], "Can you tell these two apart?", "Pass this mix-up to a classmate"));
+        box.append(b);
+      },
       done() { location.replace(home); }, exit() { location.replace(home); },
     });
   }
@@ -665,6 +677,7 @@ const Path = (() => {
       end(box) {
         const left = dimOn(course, u);
         box.append(el("p", "ls-runnote", left >= RENO_AT ? left + " rooms still dimming: they come back in your daily session, no rush." : "The scaffolding comes down: “" + u.name + "” is lit again."));
+        if (left < RENO_AT) Awards.mark("renovator");
       },
       done() { Study.justDone("renovate-" + n); location.replace(home); }, exit() { location.replace(home); },
     });
@@ -684,6 +697,7 @@ const Path = (() => {
       color: u.n ? SK().color(u.n, pk) : "var(--accent)", steps, title: "Warmed up!",
       end(box) {
         if (useStory) Mem.flag(course, story.id);
+        Awards.mark("warm-up");
         box.append(el("p", "ls-runnote", SK().unit(pk) + " " + prev + " is fresh again. Enjoy " + SK().unit(pk).toLowerCase() + " " + n + "."));
       },
       done() { location.replace(home); }, exit() { location.replace(home); },
@@ -698,6 +712,47 @@ const Path = (() => {
     Lesson.play(w, {
       color: "var(--gold)", steps, title: "Refreshed!",
       end(box) { const left = fadingIds(course, pk).length; box.append(el("p", "ls-runnote", left ? "The rest comes back a few at a time in your daily session: nothing to catch up on." : "Nothing fading in this course now.")); },
+      done() { location.replace(home); }, exit() { location.replace(home); },
+    });
+  }
+
+  /* ---------- pass the card ----------
+     Send a classmate a card: a mix-up ("can you tell these apart?"), a question or a hotel scene. The link
+     (#/study/<course>/pass/<kind>/<ids>[/from/<name>]) opens straight into it, with no score for anyone.
+     Their answers count for their own memory only on things they've already learnt, so a card can't light a
+     room they haven't had. Kinds: mix/<a>/<b>, q/<question id>, scene/<topic id>. */
+  function passLink(c, kind, ids) {
+    const me = String((typeof S !== "undefined" && S.me?.name) || "").trim().split(/\s+/)[0];   // your first name, from your page on Notes
+    return location.origin + location.pathname + "#/study/" + c + "/pass/" + kind + "/" + ids.map(encodeURIComponent).join("/") + (me ? "/from/" + encodeURIComponent(me) : "");
+  }
+  // a "Pass it on" button: the phone's share sheet, or the link copied
+  function passButton(c, kind, ids, text, label = "Pass it to a classmate") {
+    const b = K().button(label, "small ghost", async () => {
+      const url = passLink(c, kind, ids);
+      try { if (navigator.share) { await navigator.share({ title: "Check-in", text, url }); Awards.mark("passed"); return; } } catch (e) { if (e?.name === "AbortError") return; }
+      try { await navigator.clipboard.writeText(text + " " + url); b.lastChild.textContent = "Link copied: paste it in your group chat"; Awards.mark("passed"); }
+      catch (e) { b.lastChild.textContent = url; }
+    }, "arrow");
+    return b;
+  }
+  function playPass(w, { course, pk }, seg) {
+    const home = "#/study/" + course, [kind, ...rest] = seg.map(decodeURIComponent);
+    const fi = rest.indexOf("from"), from = fi >= 0 ? rest[fi + 1] : "", ids = fi >= 0 ? rest.slice(0, fi) : rest;
+    let steps = [], ask = "";
+    if (kind === "mix" && ids.length === 2 && itemOf(pk, ids[0]) && itemOf(pk, ids[1])) { steps = mixSteps(course, pk, { id: ids.join("|"), a: ids[0], b: ids[1] }) || []; ask = "Can you tell these two apart?"; }
+    else if (kind === "q" && itemOf(pk, ids[0])?.kind === "mcq") { steps = [mcqEx(course, pk, itemOf(pk, ids[0]))]; ask = "Can you answer this one?"; }
+    else if (kind === "scene" && itemOf(pk, ids[0])?.kind === "topic") { const e = sceneEx(course, pk, itemOf(pk, ids[0])); steps = e ? [e] : []; ask = "Which idea is at work in this hotel?"; }
+    if (!steps.length) { location.replace(home); return; }
+    // only what you've already learnt counts for your memory; nothing new gets lit by a passed card
+    steps = steps.map((e) => ({ ...e, items: (e.items || []).filter((x) => Mem.get(x.course, x.id)), retryable: false }));
+    steps.unshift({ type: "note", icon: "arrow", title: (from ? from + " passed you a card" : "A classmate passed you a card"), text: ask + " No score, just for fun.", retryable: false });
+    Lesson.play(w, {
+      color: "var(--coral)", steps, crab: "done", title: "Card answered!", quiet: true, noPass: true,
+      end(box) {
+        const b = el("div", "btns ls-passbtns");
+        b.append(passButton(course, kind, ids, ask, from ? "Pass it back to " + from + ", or on" : "Pass it on"));
+        box.append(b);
+      },
       done() { location.replace(home); }, exit() { location.replace(home); },
     });
   }
@@ -785,7 +840,7 @@ const Path = (() => {
     });
   }
 
-  return { render, renderFloor, play, units, status, current, stepsFor, practiceSteps, teachSteps, topicCheck, sceneEx, clozeEx, matchEx, typeEx, parts, sentences, mistakes,
+  return { render, renderFloor, play, playPass, passButton, units, status, current, stepsFor, practiceSteps, teachSteps, topicCheck, sceneEx, clozeEx, matchEx, typeEx, parts, sentences, mistakes,
            mixList, mixSteps, settle, settledLines, applyOf, hotelOf, applicable, withHotel, short, litLine, claimKeys, roomOf, KEY_DAYS, whereFrom,
            lit: (c, pk) => roomsLit(c, units(pk).filter((u) => u.n)) };
 })();

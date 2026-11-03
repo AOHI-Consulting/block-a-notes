@@ -34,7 +34,8 @@ const Lesson = (() => {
     try {
       ac = ac || new (window.AudioContext || window.webkitAudioContext)();
       const t = ac.currentTime;
-      const notes = kind === "ok" ? [[659.3, 0], [987.8, 0.08]] : kind === "done" ? [[523.3, 0], [659.3, 0.1], [784, 0.2], [1046.5, 0.3]] : kind === "tap" ? [[1200, 0]] : [[196, 0], [174.6, 0.1]];
+      if (kind === "ok") { bell(t); return; }
+      const notes = kind === "done" ? [[523.3, 0], [659.3, 0.1], [784, 0.2], [1046.5, 0.3]] : kind === "tap" ? [[1200, 0]] : [[196, 0], [174.6, 0.1]];
       notes.forEach(([f, at]) => {
         const o = ac.createOscillator(), g = ac.createGain();
         o.type = kind === "no" ? "triangle" : "sine"; o.frequency.value = f;
@@ -44,6 +45,73 @@ const Lesson = (() => {
       });
       if (kind === "no") navigator.vibrate?.(35);
     } catch (e) {}
+  }
+
+  /* ---------- say it out loud ----------
+     The browser's own dictation (Apple's or Google's speech service turns the audio into text; Check-in
+     keeps only the text, on this device). Asked once (study:mic:ok); can be switched off in More
+     (study:mic:off). mic(host, onText): a button that listens and hands over the text as it comes;
+     null where the browser can't. */
+  const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let listening = null;
+  function mic(host, onText, label = "Say it out loud") {
+    if (!Speech || store.get("study:mic:off")) return null;
+    const b = btn(label, "ghost ls-mic", () => (listening?.b === b ? listening.rec.stop() : ask()), "mic");
+    const note = el("div", "ls-micnote"); note.hidden = true;
+    function ask() {
+      if (store.get("study:mic:ok")) return start();
+      note.textContent = ""; note.hidden = false;
+      note.append(el("p", null, "Your phone's speech service (Apple's or Google's) turns what you say into text. Check-in keeps only the text, on this device."));
+      const r = el("div", "ls-micbtns");
+      r.append(btn("Use the microphone", "primary small", () => { store.set("study:mic:ok", true); note.hidden = true; start(); }), btn("Not now", "ghost small", () => { note.hidden = true; }));
+      note.append(r);
+    }
+    function start() {
+      if (listening) listening.rec.stop();
+      let rec;
+      try { rec = new Speech(); } catch (e) { return; }
+      rec.lang = "en-GB"; rec.interimResults = true; rec.continuous = true;
+      let done = "";
+      rec.onresult = (e) => {
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) done += (done ? " " : "") + t.trim(); else interim += t; }
+        onText(done, interim.trim());
+      };
+      const stop = () => { if (listening?.rec === rec) listening = null; b.classList.remove("on"); b.lastChild.textContent = label; onText(done, "", true); };
+      rec.onend = stop; rec.onerror = (e) => { stop(); if (e.error === "not-allowed") { note.hidden = false; note.textContent = "The microphone isn't allowed for this page: check your browser's settings."; } };
+      try { rec.start(); } catch (e) { return; }
+      listening = { rec, b }; b.classList.add("on"); b.lastChild.textContent = "Listening… tap to stop";
+    }
+    host.append(b, note);
+    return b;
+  }
+  // dictation into a writing box: what you say is added after what's there
+  function dictateInto(host, ta) {
+    const row = el("div", "ls-microw"); let base = null;
+    if (!mic(row, (text, interim, end) => {
+      if (base === null) base = ta.value.trim();
+      ta.value = [base, (text + " " + interim).trim()].filter(Boolean).join(base ? " " : "");
+      ta.dispatchEvent(new Event("input"));
+      if (end) { base = null; if (text) window.Awards?.mark?.("spoke"); }
+    }, "Dictate")) return;
+    ta.after(row);
+  }
+  // which of a topic's key terms (its **bold** words) a text uses: [{ term, used }]
+  function termsUsed(it, text) {
+    const terms = [...new Set([...String(it.x?.plain || "").matchAll(/\*\*(.+?)\*\*/g)].map((m) => m[1].trim()).filter((t) => words(t).length <= 4))].slice(0, 6);
+    const said = norm(text).split(/\s+/);
+    const has = (w) => { const k = w.slice(0, Math.max(4, w.length - 2)); return said.some((s) => s.startsWith(k)); };
+    return terms.map((term) => ({ term, used: norm(term).split(/\s+/).filter((w) => w.length >= 3).every(has) }));
+  }
+
+  // a soft reception-bell ding: a bright partial over a warm one, ringing out
+  function bell(t) {
+    [[1568, 0.11, 1.1], [3136, 0.04, 0.5], [4704, 0.018, 0.3], [784, 0.035, 0.6]].forEach(([f, v, len]) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = "sine"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      o.connect(g).connect(ac.destination); o.start(t); o.stop(t + len + 0.05);
+    });
   }
 
   /* ---------- small builders ---------- */
@@ -64,6 +132,7 @@ const Lesson = (() => {
     if (ex.retry) k.append(el("span", "ls-why", "Once more"));
     else if (ex.why === "new") k.append(el("span", "ls-why new", ex.whyText ? "New · " + ex.whyText : "New to you"));
     else if (ex.why === "after") k.append(el("span", "ls-why new", ex.whyText ? ex.whyText[0].toUpperCase() + ex.whyText.slice(1) : "From class"));
+    else if (ex.why === "ready") k.append(el("span", "ls-why new", ex.whyText ? ex.whyText[0].toUpperCase() + ex.whyText.slice(1) : "Getting ready"));
     else if (ex.why === "fading") k.append(el("span", "ls-why fading", ex.r < 0.6 ? "It's been a while" : "Memory " + Math.round(ex.r * 100) + "%"));   // a low score after a break reads like a mark
     return k;
   }
@@ -261,8 +330,8 @@ const Lesson = (() => {
     const last = new Map();
     r.log.forEach((l) => { if (l.g == null || l.ex.guess || l.ex.type === "where") return; const ids = (l.ex.items || []).map((x) => x.id); (ids.length ? ids : [l.ex.it?.id]).forEach((id) => id && last.set(id, l.g)); });
     const got = [...last.values()].filter((g) => g >= 2).length, back = last.size - got;
-    if (got) tile(String(got), "got it", "acc");
-    if (back) tile(String(back), "coming back", "combo");
+    if (got && !r.spec.quiet) tile(String(got), "got it", "acc");   // quiet: a passed card, nothing is kept
+    if (back && !r.spec.quiet) tile(String(back), "coming back", "combo");
     // a room's key, earned in this lesson
     const fresh = []; let keyBox = null;
     r.keys.forEach(({ pk, before }, course) => Path.claimKeys(course, pk).forEach((id) => { if (!before.has(id)) { const rm = Path.roomOf(pk, id); if (rm) fresh.push(rm); } }));
@@ -282,6 +351,23 @@ const Lesson = (() => {
     if (lucky || sure) end.append(el("p", "ls-next", [lucky ? (lucky === 1 ? "One lucky guess comes" : lucky + " lucky guesses come") + " back sooner, to make sure it sticks." : "",
       sure ? (sure === 1 ? "One answer you were sure of wasn't right" : sure + " answers you were sure of weren't right") + ": worth a second look." : ""].filter(Boolean).join(" ")));
     r.spec.end?.(end, result);
+    // plaques: a class studied within two days of it, then whatever you've newly earned
+    r.log.forEach((l) => { const d = l.g != null && l.ex.pk?.classes?.[l.ex.it?.class]?.date; if (d) { const ago = SK().tnum() - SK().dnum(d); if (ago >= 0 && ago <= 2) Awards.mark("fresh"); } });
+    Awards.check([...r.keys].map(([id, v]) => ({ id, pk: v.pk })));
+    const plaques = Awards.earnedSince(Math.floor(r.t0 / 1000) - 1);
+    if (plaques.length) {
+      const pb = el("div", "ls-plaques");
+      pb.append(el("p", "ls-keyh", plaques.length === 1 ? "A new plaque!" : plaques.length + " new plaques!"));
+      plaques.forEach((id) => pb.append(Awards.plaque(id, true)));
+      end.append(pb); Awards.seenNow();
+    }
+    // a question or a scene that stumped you (missed, not a guess): pass it to a classmate
+    const hard = r.spec.noPass ? null : r.log.find((l) => l.g === 1 && !l.ex.guess && !l.ex.retry && l.ex.course && ((l.ex.type === "mcq" && l.ex.it?.kind === "mcq") || (l.ex.type === "scene" && l.ex.it?.kind === "topic")));
+    if (hard) {
+      const p = el("div", "ls-pass"), kind = hard.ex.type === "mcq" ? "q" : "scene";
+      p.append(el("p", "small", "Stumped by one? See how a classmate does."), Path.passButton(hard.ex.course, kind, [hard.ex.it.id], kind === "q" ? "Can you answer this one?" : "Which idea is at work in this hotel?"));
+      end.append(p);
+    }
     r.stage.append(end);
     tone("done"); confetti(r.shell);
     const go = footContinue("Continue", () => { const fn = r.spec.done; stop(); fn?.(result); });
@@ -623,6 +709,22 @@ const Lesson = (() => {
       a.append(kick(ex, "Explain it"), el("p", "ls-sub", it.title),
         rich("h2", "ls-q", x?.ask?.q || "Explain it in your own words, with a hotel example."),
         el("p", "ls-lede", "Say it out loud or in your head, then check."));
+      // with the microphone: what you said, and the key terms in it
+      const heard = el("div", "ls-heard"); heard.hidden = true;
+      const said = el("p", "ls-said"), chips = el("div", "ls-terms");
+      heard.append(said, chips);
+      const mb = el("div", "ls-microw");
+      if (mic(mb, (text, interim, end) => {
+        heard.hidden = false;
+        said.textContent = (text + (interim ? " " + interim : "")).trim() || "…";
+        chips.textContent = "";
+        const used = termsUsed(it, text + " " + interim);
+        if (used.length) {
+          chips.append(el("span", "small", "Key terms you used:"));
+          used.forEach((u) => { const c = el("span", "ls-term" + (u.used ? " on" : ""), u.term); chips.append(c); });
+        }
+        if (end && text) { ex.spoke = true; window.Awards?.mark?.("spoke"); }
+      })) a.append(mb, heard);
       const back = el("div", "ls-ans"); back.hidden = true;
       if (x) back.append(rich("p", null, x.ask.a)); else if (it.notes) back.append(SK().notesDoc(it.notes, it.class, links));
       const refs = K().sourcesLine(x?.refs || it.refs, links); if (refs) back.append(refs);
@@ -768,6 +870,7 @@ const Lesson = (() => {
     apply(ex) {
       const a = card("ls-apply"), ed = SK().applyBox(ex.course, ex.pk, ex.it);
       a.append(kick(ex, "Apply it · optional"), ed.el);
+      const apTa = ed.el.querySelector(".ap-ta"); if (apTa) dictateInto(ed.el, apTa);
       const f = R.foot, inner = el("div", "ls-foot-in"); f.textContent = ""; f.className = "ls-foot";
       const skip = btn("Skip", "ghost", () => { R.log.push({ ex, g: null }); next(); });
       const save = btn("Save to my case notebook", "primary", () => { ed.save(); Mem.tick(); R.log.push({ ex, g: null }); next(); });
@@ -857,6 +960,7 @@ const Lesson = (() => {
       ta.addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(save, 400); });
       ta.addEventListener("blur", () => save());
       a.append(ta);
+      dictateInto(a, ta);
       const ans = el("div", "ls-ans"); ans.hidden = true;
       ans.append(el("p", "kicker", "What a good reply covers"));
       const ol = el("ol", "st-points");
@@ -896,6 +1000,7 @@ const Lesson = (() => {
       let tm = null;
       ta.addEventListener("input", () => { clearTimeout(tm); tm = setTimeout(() => save((s) => (s.text = ta.value)), 300); });
       a.append(kick(ex, "Explain it in your own words"), ask, ta);
+      dictateInto(a, ta);
       const x = q.answer, ans = el("div", "ls-ans"); ans.hidden = true;
       const ticks = new Set(st.ticks || []), hint = el("p", "ls-hint");
       const LABEL = { 3: "got it", 2: "partly", 1: "missed it" };

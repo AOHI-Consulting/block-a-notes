@@ -105,6 +105,9 @@ const Today = (() => {
   // week), whose new things come first; returns: [{ course, n, label, round }]: on your first visit from day 3
   // after a class (round 1), and again from day 7 (round 2), a few things from it come back even before they
   // fade; label: { "course:n": "from Monday's class" }. welcome: back after days away (what you knew best first).
+  // ready: Map(course → { at: end of the date in seconds, label: "for Thu 28 Jan" }): in its last six weeks, a few
+  // things that would have faded by then come back, spread over your visits (about two a week), and its new
+  // rooms come first.
   function plan(list, mins, t = now(), opts = {}) {
     const budget = mins * 60, due = [], lanes = [];
     list.forEach(({ id, pack }) => {
@@ -136,7 +139,22 @@ const Today = (() => {
         .sort((a, b) => a.r - b.r).slice(0, 3).forEach((x) => back.push(x));
     });
     due.unshift(...back);
-    // new things from each course in turn
+    // ready by a date
+    const READY_DAYS = 42;
+    (opts.ready ? [...opts.ready] : []).forEach(([course, { at, label }]) => {
+      const days = (at - t) / 86400, pk = list.find((x) => x.id === course)?.pack;
+      if (!pk || days <= 0 || days > READY_DAYS) return;
+      const taken = new Set(due.map((x) => x.course + ":" + x.it.id));
+      const cand = pk.items.filter((it) => KINDS.has(it.kind) && !taken.has(course + ":" + it.id)).map((it) => ({ it, st: Mem.get(course, it.id) }))
+        .filter(({ st }) => st && t - st.t > 3 * 86400)
+        .map(({ it }) => ({ course, pack: pk, it, why: "ready", whyText: label, r: Mem.recall(course, it.id, t), atD: Mem.recall(course, it.id, at) }))
+        .filter((x) => x.r >= FADING && x.atD < FADING);
+      const visits = Math.max(1, Math.round(days / 3.5)), k = Math.min(4, Math.ceil(cand.length / visits));
+      cand.sort((a, b) => a.r - b.r).slice(0, k).forEach((x) => due.push(x));
+    });
+    // new things from each course in turn (a course you want to be ready for first)
+    const soon = (l) => { const rd = l[0] && opts.ready?.get(l[0].course); return rd && (rd.at - t) / 86400 <= READY_DAYS && rd.at > t ? 0 : 1; };
+    lanes.sort((a, b) => soon(a) - soon(b));
     const fresh = [];
     for (let k = 0; lanes.some((l) => k < l.length); k++) lanes.forEach((l) => { if (k < l.length) fresh.push(l[k]); });
     const costOf = (x) => x.why === "new"

@@ -1,0 +1,15 @@
+{
+  "name": "Check-in: our Master's study room",
+  "short_name": "Check-in",
+  "description": "Each course of the Master as a hotel: a few minutes of study, whenever you come.",
+  "start_url": "./#/study",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F3F4F8",
+  "theme_color": "#FFD45C",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

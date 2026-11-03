@@ -24,11 +24,13 @@ const Crab = (() => {
   }
   // eyes on stalks: open, look (up and away), happy, sleep
   function eyes(xs, y, r, style) {
+    const d = (Math.random() * -6).toFixed(2);   // so two crabs on a page don't blink together
     return xs.map((x) => {
       let s = `<circle cx="${x}" cy="${y}" r="${r}" fill="${WHITE}" stroke="${INK}" stroke-width="2"/>`;
       if (style === "open") s += `<circle cx="${r2(x + r * .08)}" cy="${r2(y + r * .1)}" r="${r2(r * .5)}" fill="${INK}"/><circle cx="${r2(x + r * .3)}" cy="${r2(y - r * .12)}" r="${r2(r * .17)}" fill="#fff"/>`;
       if (style === "look") s += `<circle cx="${r2(x - r * .32)}" cy="${r2(y - r * .32)}" r="${r2(r * .48)}" fill="${INK}"/>`;
       if (style === "happy") s += `<path d="M${r2(x - r * .55)} ${r2(y + r * .25)} Q${x} ${r2(y - r * .8)} ${r2(x + r * .55)} ${r2(y + r * .25)}" fill="none" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/>`;
+      if (style === "open") return `<g class="cr-eye" style="animation-delay:${d}s">${s}</g>`;
       if (style === "sleep") s += `<path d="M${x - r} ${y} A${r} ${r} 0 0 1 ${x + r} ${y} Z" fill="${CORAL}" stroke="${INK}" stroke-width="2"/><path d="M${r2(x - r * .6)} ${r2(y + r * .3)} Q${x} ${r2(y + r * .75)} ${r2(x + r * .6)} ${r2(y + r * .3)}" fill="none" stroke="${INK}" stroke-width="1.8" stroke-linecap="round"/>`;
       return s;
     }).join("");
@@ -77,7 +79,7 @@ const Crab = (() => {
     const R = { idle: [x1 + 12, 84, 11, -125, `M${x1 - 2} 90 Q${x1 + 6} 92 ${x1 + 9} 88`], up: [x1 + 14, 54, 11, -105, `M${x1 - 2} 88 Q${x1 + 13} 84 ${x1 + 14} 64`],
       think: [x1 + 6, 62, 10, 175, `M${x1 - 2} 90 Q${x1 + 16} 86 ${x1 + 10} 70`], tuck: [x1 + 7, 94, 9, -150, `M${x1 - 2} 95 L${x1 + 2} 95`] };
     const pose = POSE[state] || POSE.idle, arm = ([cx, cy, r, a, d]) => limb(d) + claw(cx, cy, r, a);
-    s += arm(L[pose[0]]) + arm(R[pose[1]]);
+    s += arm(L[pose[0]]) + `<g class="cr-arm" style="transform-origin:${x1 - 2}px 90px">${arm(R[pose[1]])}</g>`;
     let b = "";
     if (shell === "hut") {
       // a beach hut: planks, a pitched roof, a round window
@@ -250,7 +252,8 @@ const Crab = (() => {
       `<rect x="3" y="2" width="20" height="28" rx="2" fill="${fill}" stroke="${INK}" stroke-width="1.6"/>` +
       `<rect x="6.5" y="6" width="13" height="7" rx="1" fill="${WHITE}" stroke="${INK}" stroke-width="1"/>` +
       (label ? `<text x="13" y="11.6" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="700" font-size="5" fill="${INK}">${label}</text>` : "") +
-      `<circle cx="18.5" cy="18" r="1.7" fill="${GOLD}" stroke="${INK}" stroke-width=".8"/></svg>`;
+      `<circle cx="18.5" cy="18" r="1.7" fill="${GOLD}" stroke="${INK}" stroke-width=".8"/>` +
+      (st === "cur" ? `<g class="cr-peek"><circle cx="23.5" cy="17" r="3" fill="${WHITE}" stroke="${INK}" stroke-width="1"/><circle cx="24" cy="17.4" r="1.4" fill="${INK}"/><path d="M22 23 Q25.5 21 25.5 25" fill="${CORAL}" stroke="${INK}" stroke-width=".9"/></g>` : "") + `</svg>`;
   }
   // a room key: brass, with its hotel tag
   const key = (dim) => `<svg viewBox="0 0 30 22" aria-hidden="true"${dim ? ' opacity=".35"' : ""}><path d="M10 9 Q6 12 5 17" fill="none" stroke="${INK}" stroke-width="1"/>` +

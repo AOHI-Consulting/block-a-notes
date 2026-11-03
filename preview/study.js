@@ -392,6 +392,12 @@ const Study = (() => {
     T.course = course?.id || null; T.meta = course; T.data = course ? T.packs.get(course.id) || null : null;
     if (today) return renderToday(w, list);
     if (seg[0] === "search") return renderSearch(w);
+    if (seg[0] === "plaques") {
+      const ready = T.cat.filter((c) => c.status === "ready");
+      const packs = await Promise.all(ready.map((c) => pack(c.id).catch(() => null)));
+      if (location.hash !== at) return;
+      return Awards.render(w, ready.map((c, i) => ({ id: c.id, pk: packs[i] })));
+    }
     if (!course) return renderPicker(w);
     if (course.status !== "ready") return renderComing(w, course);
     const rest = seg.slice(1), m = /^c(\d+)$/.exec(rest[0] || "");
@@ -400,6 +406,7 @@ const Study = (() => {
     else if (rest[0] === "l" && rest[1]) Path.play(w, ctx, rest[1]);
     else if (rest[0] === "f" && rest[1] != null) Path.renderFloor(w, ctx, rest[1]);
     else if (rest[0] === "case") renderCase(w);
+    else if (rest[0] === "pass" && rest[1]) Path.playPass(w, ctx, rest.slice(1));
     else if (rest[0] === "inbox" && Inbox.has(T.data)) Inbox.render(w, ctx);
     else if (rest[0] === "index") renderIndex(w);
     else if (m && T.data.classes[m[1]]) { store.set("study:last", [course.id, ...rest].join("/")); renderClass(w, +m[1], rest.slice(1)); }
@@ -460,7 +467,48 @@ const Study = (() => {
         else if (b1 && !b2 && d >= 7 && d <= 28 && t0 - dnum(Mem.today(new Date(b1 * 1000))) >= 3) returns.push({ course: id, n: k.n, round: 2, label: label2 });
       });
     });
-    return { recent, returns, label, welcome: Today.run(Mem.days(), Mem.today()).welcome };
+    const ready = new Map();
+    list.forEach(({ id }) => { const r = readyOf(id); if (r) ready.set(id, { at: r.at, label: "for " + shortDate(r.date) }); });
+    return { recent, returns, label, ready, welcome: Today.run(Mem.days(), Mem.today()).welcome };
+  }
+  /* ---------- ready by a date ----------
+     An exam or a presentation: pick it (from the course's timetable, or any date), and in its last six weeks
+     your sessions bring back a few things a visit that would have faded by then (today.js). No countdown:
+     dates only. Kept per course on this device (study:ready:<course>). */
+  function readyOf(c) {
+    const d = store.get("study:ready:" + c);
+    if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d) || d < Mem.today()) return null;
+    const [y, m, dd] = d.split("-").map(Number);
+    return { date: d, at: Math.floor(new Date(y, m - 1, dd, 23, 59).getTime() / 1000) };
+  }
+  function readyBox(c, meta, pk) {
+    const box = el("section", "panel rb"), r = readyOf(c), today = Mem.today();
+    const evs = (meta?.events || []).filter((e) => e.date && e.date >= today);
+    const set = (d) => { store.set("study:ready:" + c, d); T.readyEdit = null; K().render(); };
+    if (r && T.readyEdit !== c) {
+      const ev = evs.find((e) => e.date === r.date), days = (r.at - Date.now() / 1000) / 86400;
+      const t = el("p", "rb-h"); t.append(K().icon("star"), el("b", null, "Ready by " + shortDate(r.date)), document.createTextNode(ev ? " · " + ev.name : ""));
+      box.append(t);
+      if (pk) {
+        const rooms = pk.items.filter((it) => it.kind === "topic"), learnt = rooms.filter((it) => Mem.get(c, it.id)).length;
+        const onTrack = rooms.filter((it) => Mem.get(c, it.id) && Mem.recall(c, it.id, r.at) >= Today.FADING).length;
+        box.append(el("p", "small", learnt + " of " + rooms.length + " rooms learnt" + (days <= 21 && onTrack ? " · " + onTrack + " will still be lit that day" : "") + ". "
+          + (days <= 42 ? "Your sessions now bring back, a few at a time, what would fade by then." : "From six weeks before, your sessions spread the reviews so it's all lit by then.")));
+      } else box.append(el("p", "small", "Once its classes are in, your sessions spread the reviews so it's all lit by then."));
+      const b = el("div", "btns"); b.append(K().textBtn("Change the date", () => { T.readyEdit = c; K().render(); }), K().textBtn("No date", () => set(null)));
+      box.append(b);
+      return box;
+    }
+    box.append(el("p", "rb-h", "Ready by a date?"), el("p", "small", "An exam or a presentation: pick it, and in the last six weeks your sessions spread the reviews so the whole hotel is lit by then. No countdown."));
+    const b = el("div", "btns rb-pick");
+    evs.forEach((e) => b.append(K().button(e.name + " · " + shortDate(e.date), "small", () => set(e.date), "star")));
+    const inp = el("input"); inp.type = "date"; inp.min = today; inp.setAttribute("aria-label", "Another date");
+    const go = K().button("Set", "small ghost", () => { if (inp.value && inp.value >= today) set(inp.value); });
+    const lab = el("label", "rb-date"); lab.append(el("span", "small", evs.length ? "Or another date" : "A date"), inp);
+    b.append(lab, go);
+    if (r) b.append(K().textBtn("Keep " + shortDate(r.date), () => { T.readyEdit = null; K().render(); }));
+    box.append(b);
+    return box;
   }
   // the class returns a finished session brought back: done, so they don't come again
   function markReturns(steps) {
@@ -614,6 +662,22 @@ const Study = (() => {
     toggle("Ask me to apply each new topic to my hotel, at the end of its lesson", { k: "study:apply:off", flip: true }, () => !store.get("study:apply:off"));
     toggle("Messages from the GM of my hotel, now and then", { k: "study:gm:off", flip: true }, () => !store.get("study:gm:off"));
     toggle("Sound in lessons", { k: "study:sound" }, () => !!store.get("study:sound"));
+    if (window.SpeechRecognition || window.webkitSpeechRecognition) toggle("A microphone button to say it out loud (your browser's speech service turns it into text)", { k: "study:mic:off", flip: true }, () => !store.get("study:mic:off"));
+    // on your phone: on the home screen, and offline once opened
+    const ph = sec("On your phone");
+    const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (standalone) ph.append(el("p", "small", "Check-in is on your home screen. Once opened, it works without a connection too: your courses and progress are kept on this device, and they sync when you're back online."));
+    else if (window.installPrompt) {
+      ph.append(el("p", "small", "Put Check-in on your home screen: it opens like an app, and works without a connection once opened."));
+      const bb = el("div", "btns"); bb.append(K().button("Add to my home screen", "small", async () => { const e = window.installPrompt; window.installPrompt = null; e.prompt(); await e.userChoice.catch(() => {}); K().render(); }, "plus")); ph.append(bb);
+    } else if (ios) {
+      ph.append(el("p", "small", "In Safari, tap Share, then “Add to Home Screen”. It opens like an app and works without a connection once opened."),
+        el("p", "small", "The home-screen app keeps its own storage: the first time, paste the invitation link (copy it from your messages), and open your page on the Notes tab there so your progress follows you."));
+    } else ph.append(el("p", "small", "On a phone, open this page in Chrome (Android) or Safari (iPhone) and add it to your home screen: it opens like an app and works without a connection once opened."));
+    const pl = sec("Your plaques");
+    pl.append(el("p", "small", "What you've done, never how fast: plaques for your rooms, keys, letters to the GM and coming back after a break, and up to five stars per hotel. Private, and never taken away."));
+    const plb = el("div", "btns"); plb.append(link("The lobby wall", "#/study/plaques", "small", "trophy")); pl.append(plb);
     const ab = sec("How Check-in works"); ab.id = "about";
     [
       ["Each course is a hotel.", "A floor per class, a room per topic, built from the lecturers' material, what was said in class and research we checked ourselves. A room's window lights up once you know it and dims as it starts to fade. Remember it for three weeks or more and its key is yours, for good."],
@@ -841,6 +905,7 @@ const Study = (() => {
         label: (c.code || c.name) + " as a hotel under construction: " + ks.length + " floors, one per class, opening after each class.",
         floors: ks.map((k) => ({ n: k.n, planned: true, date: shortDate(k.date).toUpperCase() })) });
       left.append(bld, el("p", "small ho-tap", "Under construction: each floor opens a day or so after its class."));
+      if ((c.events || []).length) side.append(readyBox(c.id, c, null));
       const tt = timetable(c); if (tt) { tt.open = true; side.append(tt); }
       page.append(left, side); w.append(page);
     }
@@ -1245,6 +1310,10 @@ const Study = (() => {
       : mins() + " minutes today, with something new.";
     const top = el("div", "td-top"), greet = el("div", "td-greet"), crab = el("div", "td-crab");
     crab.innerHTML = Crab.svg(state, crabOpt({ count: run.count }));
+    // it waves when you arrive (once a visit), and again when you tap it
+    const wave = () => { crab.classList.remove("wave"); void crab.offsetWidth; crab.classList.add("wave"); };
+    if (!T.waved && state !== "rest") { T.waved = true; setTimeout(wave, 350); }
+    crab.addEventListener("click", wave); crab.title = "Hello!";
     greet.append(crab, el("p", "td-say", say));
     top.append(el("p", "kicker", "Today · " + new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })));
     const body = el("div", "td-body");
@@ -1264,8 +1333,10 @@ const Study = (() => {
       if (welcome && p.due) body.append(el("p", "small td-back", "Some of it faded while you were away. That's normal: one session at a time brings it back, and there's no backlog to clear."));
       const ul = el("ul", "td-list"), li = (ic, cls, b, rest) => { const x = el("li"); x.append(el("i", cls, ic), el("b", null, b), el("span", null, rest)); ul.append(x); };
       const many = list.length > 1;
-      const after = p.steps.filter((s2) => s2.why === "after"), fading = p.due - after.length;
+      const after = p.steps.filter((s2) => s2.why === "after"), fading = p.due - after.length - p.steps.filter((s2) => s2.why === "ready").length;
       if (after.length) li("↺", "acc", after.length + " back", String(after[0].whyText || "").replace(/^back /, ""));
+      const ready = p.steps.filter((s2) => s2.why === "ready");
+      if (ready.length) li("★", "gold", ready.length + " to keep lit", String(ready[0].whyText || ""));
       if (fading > 0) {
         const by = [...new Set(p.steps.filter((s2) => s2.why === "fading").map((s2) => s2.pack.course.code || s2.pack.course.name))];
         li("◐", "gold", fading + (welcome ? " to bring back" : " to refresh"), [many ? by.join(", ") : "", welcome ? "what you knew best first" : many ? "" : "fading"].filter(Boolean).join(" · "));
@@ -1304,6 +1375,13 @@ const Study = (() => {
     }
     box.append(top, greet, body);
     const wk = weekNote(list); if (wk) box.append(wk);
+    Awards.check(list.map(({ id, pack: pk }) => ({ id, pk })));
+    const nu = Awards.unseen();
+    if (nu.length) {
+      const a = el("a", "td-plaque"); a.href = "#/study/plaques";
+      a.append(K().icon("trophy"), el("span", null, (nu.length === 1 ? "A new plaque: " + Awards.name(nu[0]) : nu.length + " new plaques") + " · see the lobby wall"));
+      box.append(a);
+    }
     if (!runOff()) box.append(runRow(run));
     else { const p = el("p", "small td-hidden"); p.append(document.createTextNode("Your run of study days is hidden. "), K().textBtn("Show it", () => { store.set("study:run:off", false); K().render(); })); box.append(p); }
   }
@@ -1379,7 +1457,7 @@ const Study = (() => {
     const steps = p.steps.flatMap((st) => {
       const tag = (x, why) => ({ ...x, why, whyText: why ? st.whyText : null, r: st.r, showCourse: many });
       if (st.it.kind === "topic" && st.kind === "learn") return Path.teachSteps(st.course, st.pack, st.it).map((x, i) => tag(x, i ? null : st.why));
-      if (st.it.kind === "topic" && st.kind === "say" && (st.why === "fading" || st.why === "after")) return [tag(Path.topicCheck(st.course, st.pack, st.it), st.why)];
+      if (st.it.kind === "topic" && st.kind === "say" && (st.why === "fading" || st.why === "after" || st.why === "ready")) return [tag(Path.topicCheck(st.course, st.pack, st.it), st.why)];
       return [{
         type: st.kind, course: st.course, pk: st.pack, it: st.it, items: [{ course: st.course, id: st.it.id }],
         why: st.why, whyText: st.whyText, r: st.r, pick: st.pick, where: st.where, showCourse: many,
@@ -1400,6 +1478,7 @@ const Study = (() => {
       color: "var(--accent)", steps, title: welcome ? "Welcome back, and done!" : "Today's session done!",
       end(box, res) {
         markReturns(p.steps);
+        if ((runBefore.away ?? 0) >= 14) Awards.mark("welcome-back");
         const run = Today.run(Mem.days(), Mem.today()), justCounted = run.today && !before;
         if (mx) Path.settledLines(box, mx.pk, Path.settle(res.log, [mx.m]));
         if (justCounted && !runOff()) box.querySelector("h2").textContent = runBefore.thisWeek ? "Done, and today counts!" : "Done, and this week counts!";
@@ -1473,7 +1552,7 @@ const Study = (() => {
     render, more,
     justDone(id) { T.justDone = id; },
     _pack: (id) => T.packs.get(id),   // for testing from the console: a course already opened
-    kit: { rich, sec, link, meter, crumbs, unit, unitShort, color, chipOf, whereLine, notesDoc, noteBox, noteShow, findBox, syncLine, runRow, applyBox, timetable, classesOf, shortDate, dnum, tnum },
+    kit: { readyBox, rich, sec, link, meter, crumbs, unit, unitShort, color, chipOf, whereLine, notesDoc, noteBox, noteShow, findBox, syncLine, runRow, applyBox, timetable, classesOf, shortDate, dnum, tnum },
   };
 })();
 

@@ -18,6 +18,10 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#FFD45C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
@@ -625,6 +629,67 @@ mark { background: color-mix(in srgb, var(--gold) 32%, transparent); color: inhe
 .td-mix button[aria-pressed="true"] { border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 9%, var(--panel)); color: var(--ink); }
 .td-mix button svg { width: 12px; height: 12px; }
 .td-mixline { margin: 6px 0 0; }
+/* plaques and stars (awards.js) */
+.aw-page { display: grid; gap: 22px; max-width: 900px; }
+.aw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 8px; }
+.aw-plaque { display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: center; padding: 11px 13px; border-radius: 12px; border: 1.5px dashed var(--line-2); color: var(--muted); }
+.aw-plaque > div { display: grid; gap: 1px; min-width: 0; }
+.aw-plaque b { font-size: 14.5px; color: var(--ink-2); }
+.aw-plaque span { font-size: 12.5px; line-height: 1.4; }
+.aw-plaque small { font: 500 11px var(--mono); color: #7A5A18; margin-top: 2px; }
+.aw-ic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-2); }
+.aw-ic svg { width: 18px; height: 18px; }
+.aw-plaque.got { border: 2px solid #8C6420; background: linear-gradient(160deg, #F7DC9A, #E3B65C 55%, #D2A04A); color: #4A3410; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 3px 10px -6px rgba(90, 60, 10, .6); }
+.aw-plaque.got b { color: #2B1B05; }
+.aw-plaque.got .aw-ic { background: rgba(255, 255, 255, .45); color: #5A3E0E; border: 1px solid rgba(90, 60, 10, .35); }
+.aw-plaque.small { max-width: 360px; text-align: left; }
+.aw-stars { display: inline-flex; gap: 1px; font-size: 14px; letter-spacing: 0; }
+.aw-stars i { font-style: normal; color: var(--line-2); }
+.aw-stars i.on { color: #E3A72F; }
+.aw-hotels { display: grid; gap: 8px; }
+.aw-hotel { display: block; padding: 12px 14px; color: inherit; text-decoration: none; }
+.aw-hotel > div { display: grid; gap: 3px; }
+.aw-hotel small { color: var(--muted); font-size: 12.5px; }
+.ho-starl { margin-left: 10px; text-decoration: none; vertical-align: 1px; }
+.ls-plaques { display: grid; gap: 8px; justify-items: center; }
+.td-plaque { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 12px; background: color-mix(in srgb, #E3B65C 22%, var(--panel)); color: var(--ink); text-decoration: none; font-size: 13.5px; font-weight: 600; }
+.td-plaque svg { width: 17px; height: 17px; color: #A9781E; }
+.ls-microw { display: grid; gap: 8px; justify-items: start; }
+.ls-mic { font-size: 14px !important; padding: 8px 14px !important; }
+.ls-mic.on { border-color: var(--coral) !important; color: var(--coral); animation: ls-rec 1.4s ease-in-out infinite; }
+@keyframes ls-rec { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--coral) 18%, transparent); } }
+.ls-micnote { padding: 11px 13px; border-radius: 12px; background: var(--panel-2); display: grid; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.ls-micnote p { margin: 0; }
+.ls-micbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.ls-heard { display: grid; gap: 8px; padding: 12px 14px; border-radius: 14px; background: var(--panel); border: 2px dashed var(--line-2); }
+.ls-said { margin: 0; font-size: 15.5px; line-height: 1.55; color: var(--ink); }
+.ls-terms { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ls-term { font: 600 12.5px var(--mono); padding: 3px 9px; border-radius: 999px; border: 1.5px dashed var(--line-2); color: var(--muted); }
+.ls-term.on { border-style: solid; border-color: var(--good); color: var(--good); background: var(--good-wash); }
+.ls-term.on::before { content: "✓ "; }
+.ls-passbtns { justify-content: center; }
+.ls-pass { display: grid; justify-items: center; gap: 6px; max-width: 420px; padding: 10px 14px; border-radius: 14px; background: var(--panel-2); }
+.ls-pass p { margin: 0; }
+.rb { padding: 13px 16px; display: grid; gap: 6px; }
+.rb p { margin: 0; }
+.rb-h { display: flex; align-items: center; gap: 7px; font-weight: 650; font-size: 15px; }
+.rb-h svg { width: 16px; height: 16px; color: var(--gold); }
+.rb .btns { align-items: center; gap: 8px 14px; }
+.rb-date { display: inline-flex; align-items: center; gap: 8px; }
+.rb-date input { font: inherit; font-size: 14px; padding: 6px 9px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); }
+.gate-paste { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; max-width: 460px; }
+.gate-paste input { flex: 1 1 220px; font: inherit; font-size: 15px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); }
+.gate-paste small { flex-basis: 100%; color: var(--bad); }
+/* the crab comes alive: it blinks, waves, peeks round your next door (still for reduced motion) */
+.cr-eye { transform-box: fill-box; transform-origin: center; animation: cr-blink 6s infinite; }
+@keyframes cr-blink { 0%, 93%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.12); } 97% { transform: scaleY(1); } }
+.cr-arm { transform-box: view-box; }
+.wave .cr-arm { animation: cr-wave 1.1s ease-in-out; }
+@keyframes cr-wave { 0%, 100% { transform: rotate(0); } 20%, 60% { transform: rotate(-24deg); } 40%, 80% { transform: rotate(8deg); } }
+.td-crab { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cr-peek { animation: cr-peek 3.6s ease-in-out infinite; transform-box: fill-box; }
+@keyframes cr-peek { 0%, 55%, 100% { transform: translateX(0); } 65%, 90% { transform: translateX(-2px); } }
+@media (prefers-reduced-motion: reduce) { .cr-eye, .wave .cr-arm, .cr-peek { animation: none; } }
 .td-set { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 8px; padding: 10px 12px; border-radius: 12px; background: var(--panel-2); width: 100%; }
 .td-set .td-mix { margin: 0; }
 .td-set > .tbtn { margin-left: auto; font-size: 12.5px; }
@@ -1012,6 +1077,12 @@ a.fd-tile:hover { border-color: var(--line-2); }
 .btn.ho-act.coral svg { color: var(--coral); }
 .btn.ho-act.plain svg { color: var(--muted); }
 .ho-floors { display: grid; gap: 6px; }
+.ho-floors > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 10px 2px; }
+.ho-floors > summary::-webkit-details-marker { display: none; }
+.ho-floors > summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
+.ho-floors[open] > summary::before { transform: rotate(45deg); }
+.ho-floors > summary small { margin-left: auto; font: 500 11.5px var(--mono); text-transform: none; letter-spacing: 0; }
+.ho-floors > .ho-floor + .ho-floor, .ho-floors > summary + .ho-floor { margin-top: 6px; }
 .ho-h { margin: 0 0 2px; font: 600 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .ho-floor { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); color: var(--ink); text-decoration: none; }
 .ho-floor:hover { border-color: var(--line-2); }
@@ -1453,14 +1524,20 @@ body.ls-open .page { padding-top: 0; padding-bottom: 0; }
 </main>
 
 <footer>Only people with the invitation link can open this page.</footer>
-<script src="notes.js?v=32"></script>
-<script src="mascot.js?v=32"></script>
-<script src="memory.js?v=32"></script>
-<script src="today.js?v=32"></script>
-<script src="study.js?v=32"></script>
-<script src="lesson.js?v=32"></script>
-<script src="path.js?v=32"></script>
-<script src="inbox.js?v=32"></script>
-<script src="practise.js?v=32"></script>
+<script src="notes.js?v=34"></script>
+<script src="mascot.js?v=34"></script>
+<script src="memory.js?v=34"></script>
+<script src="today.js?v=34"></script>
+<script src="study.js?v=34"></script>
+<script src="lesson.js?v=34"></script>
+<script src="path.js?v=34"></script>
+<script src="inbox.js?v=34"></script>
+<script src="awards.js?v=34"></script>
+<script>
+/* works offline once opened, and can go on the home screen (sw.js, manifest.webmanifest) */
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1")) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); window.installPrompt = e; });
+</script>
+<script src="practise.js?v=34"></script>
 </body>
 </html>
