@@ -138,9 +138,11 @@ const Crab = (() => {
      aria, done, just, keys, scaffold, unscaffold }] from the ground floor up }.
      windows: L lit (you know it), D dimming (fading), C the next one, P started, - not yet; keys: the
      windows whose key is yours (a gold frame); scaffold: the floor needs a renovation; unscaffold: its
-     renovation just finished (the scaffolding comes down). */
+     renovation just finished (the scaffolding comes down); fresh: its class was this past week (a coral
+     plate); planned: a class still to come (whitewashed, with its date; no windows yet). A crane stands
+     on the roof while floors are still to come. */
   function hotel(spec) {
-    const floors = spec.floors, slots = Math.max(6, ...floors.map((f) => f.windows.length));
+    const floors = spec.floors, slots = Math.max(6, ...floors.map((f) => (f.windows || "").length));
     const x0 = 50, x1 = 256, FH = 22, top = 38, sw = (x1 - x0 - 8) / slots, ww = Math.min(13, sw * .66), wh = 13;
     const fb = top + floors.length * FH, lb = fb + 40, H = lb + 18, mid = (x0 + x1) / 2;
     const sky = SKIES[spec.sky] ? spec.sky : null, dark = sky === "night" || sky === "dusk";
@@ -168,13 +170,18 @@ const Crab = (() => {
     s += `<rect x="${x0 - 6}" y="${top - 9}" width="${x1 - x0 + 12}" height="10" rx="3" fill="${NAVY}" stroke="${INK}" stroke-width="2.4"/>`;
     const n = floors.length, glow = [];
     floors.forEach((f, k) => {
-      const y = top + (n - 1 - k) * FH, row = [...f.windows], keys = new Set(f.keys || []);
+      const y = top + (n - 1 - k) * FH, row = [...(f.windows || "")], keys = new Set(f.keys || []);
       let g = "";
       if (k < n - 1) g += `<path d="M${x0} ${y + FH} H${x1}" stroke="${INK}" stroke-opacity=".22" stroke-width="1.2"/>`;
       g += `<rect class="ho-hit" x="4" y="${y}" width="292" height="${FH}" rx="5"/>`;
       // the floor's number on a plate, so it reads against any sky (green once the floor is complete)
-      g += `<rect class="ho-plate" x="${x0 - 27}" y="${y + 4}" width="20" height="14" rx="4" fill="${f.done ? "#CDEFD9" : WHITE}" stroke="${INK}" stroke-width=".9"/>`;
-      g += `<text class="ho-num" x="${x0 - 17}" y="${y + 14.4}" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="700" font-size="9.5" fill="${INK}">${f.n}</text>`;
+      g += `<rect class="ho-plate" x="${x0 - 27}" y="${y + 4}" width="20" height="14" rx="4" fill="${f.fresh ? CORAL : f.done ? "#CDEFD9" : WHITE}" stroke="${INK}" stroke-width=".9"${f.planned ? ' stroke-dasharray="2 1.6"' : ""}/>`;
+      g += `<text class="ho-num" x="${x0 - 17}" y="${y + 14.4}" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="700" font-size="9.5" fill="${f.fresh ? "#fff" : INK}">${f.n}</text>`;
+      if (f.planned) {
+        g += `<rect x="${x0 + 1.2}" y="${y + 1}" width="${x1 - x0 - 2.4}" height="${FH - 1.4}" fill="${WHITE}" opacity=".55"/>`;
+        g += `<rect x="${x0 + 8}" y="${y + 4}" width="${x1 - x0 - 16}" height="${FH - 8}" rx="3" fill="none" stroke="${INK}" stroke-width="1" stroke-dasharray="3 2.4" opacity=".45"/>`;
+        if (f.date) g += `<text x="${(x0 + x1) / 2}" y="${y + 14.6}" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="700" font-size="8.6" letter-spacing=".5" fill="${INK}" opacity=".7">${f.date}</text>`;
+      }
       const start = x0 + 4 + (slots - row.length) * sw / 2;
       row.forEach((st, j) => {
         const wx = r2(start + j * sw + (sw - ww) / 2), wy = y + 4.5, key = keys.has(j);
@@ -192,6 +199,14 @@ const Crab = (() => {
     // at dusk and at night the lit windows glow (drawn under the building's windows would hide it: over, softly)
     if (glow.length) s += `<g filter="url(#hoGlowF)" opacity=".55" pointer-events="none">${glow.join("")}</g>`;
     if (spec.lights) s += bulbs(Array.from({ length: 11 }, (_, i) => [r2(x0 - 6 + i * (x1 - x0 + 12) / 10), top + 2]));
+    // a crane on the roof while floors are still to come
+    if (floors.some((f) => f.planned)) {
+      const cx = x1 - 26, Y = top - 9;
+      s += `<g class="ho-crane" pointer-events="none"><path d="M${cx} ${Y} V${Y - 26} M${cx - 42} ${Y - 24} H${cx + 12} M${cx} ${Y - 26} L${cx - 26} ${Y - 24} M${cx} ${Y - 26} L${cx + 12} ${Y - 24}" stroke="${INK}" stroke-width="3.4" stroke-linecap="round"/>`;
+      s += `<path d="M${cx} ${Y} V${Y - 26} M${cx - 42} ${Y - 24} H${cx + 12}" stroke="${GOLD}" stroke-width="1.8" stroke-linecap="round"/>`;
+      s += `<path d="M${cx - 36} ${Y - 24} V${Y - 12}" stroke="${INK}" stroke-width="1"/><path d="M${cx - 39} ${Y - 12} h6 l-1.5 4 h-3 z" fill="${GOLD}" stroke="${INK}" stroke-width=".8"/>`;
+      s += `<rect x="${cx + 6}" y="${Y - 23}" width="8" height="6" rx="1" fill="${NAVY}" stroke="${INK}" stroke-width=".8"/></g>`;
+    }
     // the lobby, and the crab in its door
     s += `<path d="M${x0} ${fb} H${x1}" stroke="${INK}" stroke-width="2"/>`;
     s += `<rect x="${x0 + 12}" y="${fb + 9}" width="40" height="20" rx="3" fill="${LIT}" stroke="${INK}" stroke-width="1.8"/><rect x="${x1 - 52}" y="${fb + 9}" width="40" height="20" rx="3" fill="${LIT}" stroke="${INK}" stroke-width="1.8"/>`;

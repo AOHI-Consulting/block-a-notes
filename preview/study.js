@@ -395,6 +395,75 @@ const Study = (() => {
     }
   }
 
+  /* ---------- the timetable: before and after class ----------
+     A course's classes with their dates: from its schedule in the course list (MyTimetable), and the
+     classes already built into its pack. The evening before (or the day of) a class, Today offers a
+     warm-up; for the week after it, its new things come first; on day 3 and day 7 a few of them come
+     back. A class still to come is a floor under construction. */
+  const unitName = (x) => x?.course?.unit || x?.unit || "Class";   // a pack, or a course in the list
+  const dnum = (iso) => Math.round(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 864e5);
+  const tnum = () => dnum(Mem.today());
+  const WEEKDAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const shortDate = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  function classesOf(c) {
+    const by = new Map();
+    (c?.classes || []).forEach((k) => by.set(+k.n, { n: +k.n, date: k.date || null, name: k.name, built: true }));
+    (c?.schedule || []).forEach((x) => { const o = by.get(+x.n) || { n: +x.n, built: false }; by.set(+x.n, { ...o, date: x.date, time: x.time, also: x.also, label: x.name || null }); });
+    return [...by.values()].sort((a, b) => a.n - b.n);
+  }
+  // "Monday's class", "yesterday's class", "today's class"; older: "the 9 Nov class"
+  function classDay(iso) {
+    const d = tnum() - dnum(iso);
+    if (d === 0) return "today's class"; if (d === 1) return "yesterday's class";
+    if (d > 1 && d < 7) return WEEKDAY[new Date(iso + "T12:00:00").getDay()] + "'s class";
+    return "the " + new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) + " class";
+  }
+  // classes later today or tomorrow, in every course with a timetable
+  function upcoming() {
+    const t0 = tnum(), hm = new Date().toTimeString().slice(0, 5), out = [];
+    (T.cat || []).forEach((c) => classesOf(c).forEach((k) => {
+      if (!k.date) return;
+      const d = dnum(k.date) - t0;
+      if ((d === 0 && (!k.time || k.time > hm)) || d === 1) out.push({ c, k, when: d ? "tomorrow" : "today" });
+    }));
+    return out.sort((a, b) => (a.k.date + (a.k.time || "")).localeCompare(b.k.date + (b.k.time || "")));
+  }
+  // a warm-up for class n: the class before it, if the course has it
+  const warmable = (c, n) => c.status === "ready" && (c.classes || []).some((k) => +k.n < n);
+  function planOpts(list) {
+    const t0 = tnum(), recent = new Map(), returns = [], label = {};
+    list.forEach(({ id }) => {
+      const c = T.cat.find((x) => x.id === id);
+      classesOf(c).forEach((k) => {
+        if (!k.built || !k.date) return;
+        const d = t0 - dnum(k.date);
+        if (d >= 0 && d <= 7) { if (!recent.has(id)) recent.set(id, new Set()); recent.get(id).add(k.n); label[id + ":" + k.n] = "from " + classDay(k.date); }
+        if ((d >= 3 && d <= 4) || (d >= 7 && d <= 8)) returns.push({ course: id, n: k.n, label: "back from " + classDay(k.date) });
+      });
+    });
+    return { recent, returns, label };
+  }
+  // the course's timetable, as a short list (folded away on a course page)
+  function timetable(c, pk) {
+    const ks = classesOf(c).filter((k) => k.date);
+    if (!ks.length) return null;
+    const t0 = tnum(), next = ks.find((k) => dnum(k.date) >= t0), U = unitName(pk || c);
+    const d = el("details", "tt"), sm = el("summary");
+    sm.append(el("span", "kicker", "Timetable"), el("span", "small", next ? "Next: " + U.toLowerCase() + " " + next.n + ", " + shortDate(next.date) + (next.time ? ", " + next.time : "") : "All classes held"));
+    d.append(sm);
+    const ol = el("ol", "tt-list");
+    ks.forEach((k) => {
+      const li = el("li", dnum(k.date) < t0 ? "past" : k === next ? "next" : "");
+      li.append(el("b", null, U + " " + k.n + (k.label ? " · " + k.label : "")), el("span", null, shortDate(k.date) + (k.time ? ", " + k.time : "") + (k.also ? " and " + shortDate(k.also) : "")));
+      li.append(el("small", null, k.built ? "floor open" : dnum(k.date) < t0 ? "floor coming soon" : "floor opens after the class"));
+      ol.append(li);
+    });
+    (c.events || []).forEach((e) => { const li = el("li", "ev"); li.append(el("b", null, e.name), el("span", null, shortDate(e.date) + (e.time ? ", " + e.time : ""))); ol.append(li); });
+    d.append(ol);
+    if (c.scheduleFrom) d.append(el("p", "small", "From " + c.scheduleFrom + ". Timetables change: check MyTimetable before a class."));
+    return d;
+  }
+
   /* ---------- the front desk: Study's home ----------
      Today first, with the crab. Then the courses of the block you're in, the ones that run across
      blocks, and earlier blocks folded away (open when the current block has nothing ready yet). The
@@ -466,8 +535,9 @@ const Study = (() => {
   }
   function courseTile(c) {
     const ready = c.status === "ready", pk = ready ? T.packs.get(c.id) : null;
-    const a = el(ready ? "a" : "div", "fd-tile" + (ready ? "" : " coming"));
-    if (ready) a.href = "#/study/" + c.id;
+    const planned = !ready && (c.schedule || []).length;
+    const a = el(ready || planned ? "a" : "div", "fd-tile" + (ready ? "" : " coming"));
+    if (ready || planned) a.href = "#/study/" + c.id;
     const mh = el("span", "fd-mini"), t = el("span", "fd-t"), name = el("span", "fd-name");
     if (c.code) name.append(el("span", "chip", c.code));
     name.append(el("b", null, c.name));
@@ -480,10 +550,14 @@ const Study = (() => {
       const sm = Mem.summary(c.id);
       line = sm.seen ? sm.known + " of " + c.items + " known" : c.classes.length + " " + unitsOf(c.unit || "Class") + " · not started";
       mh.innerHTML = Crab.mini(c.classes.length, c.items ? sm.known / c.items : 0);
+    } else if (planned) {
+      const first = classesOf(c).find((k) => k.date && dnum(k.date) >= tnum()) || classesOf(c)[0];
+      line = c.schedule.length + " " + unitsOf(c.unit || "Class") + " · " + (dnum(first.date) >= tnum() ? "first on " + shortDate(first.date) + (first.time ? ", " + first.time : "") : "the first floor opens soon");
+      mh.innerHTML = Crab.mini(c.schedule.length, 0, true);
     } else { line = c.note || "Coming"; mh.innerHTML = Crab.mini(0, 0, true); }
     t.append(name, el("small", "fd-line", line));
     a.append(mh, t);
-    if (ready) a.append(K().icon("next")); else a.append(el("span", "fd-soon", "Coming"));
+    if (ready || planned) a.append(K().icon("next")); if (!ready) a.append(el("span", "fd-soon", "Coming"));
     return a;
   }
 
@@ -681,9 +755,19 @@ const Study = (() => {
 
   function renderComing(w, c) {
     const head = el("div", "st-head");
-    head.append(crumbs("#/study", "All courses"), el("p", "kicker", (c.code ? c.code + " · " : "") + "Block " + c.block), el("h1", null, c.name),
+    head.append(crumbs("#/study", "All courses"), el("p", "kicker", [c.code, c.lecturer].filter(Boolean).join(" · ") || "Block " + c.block), el("h1", null, c.full || c.name),
       el("p", "line", c.note || "This course is coming."));
     w.append(head);
+    const ks = classesOf(c).filter((k) => k.date);
+    if (ks.length) {
+      const page = el("div", "ho-page"), left = el("div", "ho-left"), bld = el("div", "ho-bld"), side = el("div", "ho-side");
+      bld.innerHTML = Crab.hotel({ code: c.code || "", sky: Crab.skyAt(), lights: Crab.seasonAt() === "lights",
+        label: (c.code || c.name) + " as a hotel under construction: " + ks.length + " floors, one per class, opening after each class.",
+        floors: ks.map((k) => ({ n: k.n, planned: true, date: shortDate(k.date).toUpperCase() })) });
+      left.append(bld, el("p", "small ho-tap", "Under construction: each floor opens a day or so after its class."));
+      const tt = timetable(c); if (tt) { tt.open = true; side.append(tt); }
+      page.append(left, side); w.append(page);
+    }
   }
 
   /* ---------- one class ---------- */
@@ -1069,11 +1153,12 @@ const Study = (() => {
   function fillToday(box, list, load) {
     box.textContent = "";
     const run = Today.run(Mem.days(), Mem.today()), mx = mixFor(list);
-    const p = (T.plan = Today.plan(list, mx ? mins() - 1 : mins()));
-    const any = p.steps.length || mx;
+    const p = (T.plan = Today.plan(list, mx ? mins() - 1 : mins(), undefined, planOpts(list)));
+    const any = p.steps.length || mx, soon = upcoming(), warm = soon.find((x) => warmable(x.c, x.k.n));
     // the crab: its flag shows your run once today counts, it naps after a rest day, otherwise it waits
     const state = run.today && !runOff() ? "run" : run.keep && !runOff() ? "rest" : "idle";
-    const say = !any ? "All caught up. Nothing is fading, and you've seen everything so far."
+    const say = soon.length && !run.today ? (soon[0].when === "today" ? "Class later today. " : "Class tomorrow. ") + (warm ? "A 3-minute warm-up?" : "The new floor opens after it.")
+      : !any ? "All caught up. Nothing is fading, and you've seen everything so far."
       : run.today ? "That's today counted. Anything more is a bonus."
       : state === "rest" ? "Yesterday was a rest day. Your run is still on."
       : p.due ? mins() + " minutes today. What's fading comes first."
@@ -1083,17 +1168,31 @@ const Study = (() => {
     greet.append(crab, el("p", "td-say", say));
     top.append(el("p", "kicker", "Today · " + new Date().toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })), sizes(() => fillToday(box, list, load)));
     const body = el("div", "td-body");
+    if (soon.length) {
+      const cl = el("div", "td-class");
+      soon.forEach(({ c, k, when }) => {
+        const row = el("div", "td-classrow"), t = el("div", "td-ct");
+        t.append(el("b", null, (when === "today" ? "Today" : "Tomorrow") + (k.time ? ", " + k.time : "") + " · " + (c.code || c.name) + " " + unitName(c).toLowerCase() + " " + k.n + (k.label ? " (" + k.label.toLowerCase() + ")" : "")),
+          el("span", "small", warmable(c, k.n) ? "Warm up with the class before it." : k.n === classesOf(c)[0]?.n ? "The first class: its floor opens after it." : "Its floor opens after the class."));
+        row.append(el("i", null, "◷"), t);
+        if (warmable(c, k.n)) row.append(link("Warm up · 3 min", "#/study/" + c.id + "/l/warmup-" + k.n, "small", "play"));
+        cl.append(row);
+      });
+      body.append(cl);
+    }
     if (any) {
       body.append(el("h2", null, run.today ? "Another " + mins() + " minutes?" : "Your " + mins() + " minutes"));
       const ul = el("ul", "td-list"), li = (ic, cls, b, rest) => { const x = el("li"); x.append(el("i", cls, ic), el("b", null, b), el("span", null, rest)); ul.append(x); };
       const many = list.length > 1;
-      if (p.due) {
+      const after = p.steps.filter((s2) => s2.why === "after"), fading = p.due - after.length;
+      if (after.length) li("↺", "acc", after.length + " back", String(after[0].whyText || "").replace(/^back /, ""));
+      if (fading > 0) {
         const by = [...new Set(p.steps.filter((s2) => s2.why === "fading").map((s2) => s2.pack.course.code || s2.pack.course.name))];
-        li("◐", "gold", p.due + " to refresh", many ? by.join(", ") : "fading");
+        li("◐", "gold", fading + " to refresh", many ? by.join(", ") : "fading");
       }
       if (p.fresh) {
-        const x = p.next, c = x && x.pack.classes[x.it.class];
-        li("+", "acc", p.fresh + " new", x ? [many ? x.pack.course.code : "", c ? unit(x.pack) + " " + x.it.class : ""].filter(Boolean).join(" · ") : "");
+        const x = p.steps.find((s2) => s2.why === "new") || p.next, c = x && x.pack.classes[x.it.class];
+        li("+", "acc", p.fresh + " new", x ? [many ? x.pack.course.code : "", c ? unit(x.pack) + " " + x.it.class : "", x.whyText || ""].filter(Boolean).join(" · ") : "");
       }
       if (mx) { const nm = (id) => Path.short(mx.pk.items.find((it) => it.id === id).title); li("⇄", "coral", "1 mix-up", nm(mx.m.a) + " ↔ " + nm(mx.m.b)); }
       body.append(ul);
@@ -1144,7 +1243,7 @@ const Study = (() => {
 
   // The daily session, in the lesson player: what is fading, then new things from your path.
   function renderToday(w, list) {
-    const mx = mixFor(list), p = Today.plan(list, mx ? mins() - 1 : mins());
+    const mx = mixFor(list), p = Today.plan(list, mx ? mins() - 1 : mins(), undefined, planOpts(list));
     if (!p.steps.length && !mx) {
       const d = el("div", "panel st-done");
       d.append(el("p", "kicker", "Today"), el("h2", null, "All caught up"), el("p", "small", "Nothing is fading, and you've seen everything in your courses so far."));
@@ -1154,12 +1253,12 @@ const Study = (() => {
     const before = Today.run(Mem.days(), Mem.today()).today, many = list.length > 1;
     // a new topic is taught in small steps, as in its room; a fading one comes back from one of three sides
     const steps = p.steps.flatMap((st) => {
-      const tag = (x, why) => ({ ...x, why, r: st.r, showCourse: many });
+      const tag = (x, why) => ({ ...x, why, whyText: why ? st.whyText : null, r: st.r, showCourse: many });
       if (st.it.kind === "topic" && st.kind === "learn") return Path.teachSteps(st.course, st.pack, st.it).map((x, i) => tag(x, i ? null : st.why));
-      if (st.it.kind === "topic" && st.kind === "say" && st.why === "fading") return [tag(Path.topicCheck(st.course, st.pack, st.it), st.why)];
+      if (st.it.kind === "topic" && st.kind === "say" && (st.why === "fading" || st.why === "after")) return [tag(Path.topicCheck(st.course, st.pack, st.it), st.why)];
       return [{
         type: st.kind, course: st.course, pk: st.pack, it: st.it, items: [{ course: st.course, id: st.it.id }],
-        why: st.why, r: st.r, pick: st.pick, where: st.where, showCourse: many,
+        why: st.why, whyText: st.whyText, r: st.r, pick: st.pick, where: st.where, showCourse: many,
         retryable: st.kind === "mcq" || st.kind === "learn" ? false : undefined,
       }];
     });
@@ -1249,7 +1348,7 @@ const Study = (() => {
     render, more,
     justDone(id) { T.justDone = id; },
     _pack: (id) => T.packs.get(id),   // for testing from the console: a course already opened
-    kit: { rich, sec, link, meter, crumbs, unit, unitShort, color, chipOf, whereLine, notesDoc, noteBox, noteShow, findBox, syncLine, runRow, applyBox },
+    kit: { rich, sec, link, meter, crumbs, unit, unitShort, color, chipOf, whereLine, notesDoc, noteBox, noteShow, findBox, syncLine, runRow, applyBox, timetable, classesOf, shortDate, dnum, tnum },
   };
 })();
 

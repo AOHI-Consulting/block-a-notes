@@ -62,7 +62,8 @@ const Lesson = (() => {
     if (n && pk?.classes[n] && !ex.hideClass) k.append(SK().chipOf(pk, n));
     k.append(el("span", "kicker", label));
     if (ex.retry) k.append(el("span", "ls-why", "Once more"));
-    else if (ex.why === "new") k.append(el("span", "ls-why new", "New to you"));
+    else if (ex.why === "new") k.append(el("span", "ls-why new", ex.whyText ? "New · " + ex.whyText : "New to you"));
+    else if (ex.why === "after") k.append(el("span", "ls-why new", ex.whyText ? ex.whyText[0].toUpperCase() + ex.whyText.slice(1) : "From class"));
     else if (ex.why === "fading") k.append(el("span", "ls-why fading", "Memory " + Math.round(ex.r * 100) + "%"));
     return k;
   }

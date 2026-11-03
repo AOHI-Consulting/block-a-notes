@@ -98,7 +98,10 @@ const Today = (() => {
 
   /* ---------- a session ---------- */
   // list: [{ id, meta, pack }] for the courses in your mix; mins: 5, 10 or 15.
-  function plan(list, mins, t = now()) {
+  // opts (before and after class, from the timetable): recent: Map(course → Set of classes held this past
+  // week), whose new things come first; returns: [{ course, n, label }] for day 3 and day 7 after a class,
+  // when a few things from it come back even before they fade; label: { "course:n": "from Monday's class" }.
+  function plan(list, mins, t = now(), opts = {}) {
     const budget = mins * 60, due = [], lanes = [];
     list.forEach(({ id, pack }) => {
       pack.items.forEach((it) => {
@@ -110,10 +113,24 @@ const Today = (() => {
       });
       // a framework named like a topic was taught by that topic: it skips its own "new" card
       const topics = new Set(pack.items.filter((it) => it.kind === "topic").map((it) => it.title.toLowerCase()));
-      lanes.push(path(pack).filter((it) => !Mem.get(id, it.id))
-        .map((it) => ({ course: id, pack, it, why: "new", taught: it.kind === "framework" && topics.has(nameOf(it.title).toLowerCase()) })));
+      let lane = path(pack).filter((it) => !Mem.get(id, it.id))
+        .map((it) => ({ course: id, pack, it, why: "new", taught: it.kind === "framework" && topics.has(nameOf(it.title).toLowerCase()) }));
+      // a class from this past week comes first, while it's fresh
+      const rec = opts.recent?.get(id);
+      if (rec?.size) lane = [...lane.filter((x) => rec.has(+x.it.class)).map((x) => ({ ...x, whyText: opts.label?.[id + ":" + (+x.it.class)] })), ...lane.filter((x) => !rec.has(+x.it.class))];
+      lanes.push(lane);
     });
     due.sort((a, b) => a.r - b.r);
+    // day 3 and day 7 after a class: a few things from it, the weakest first, even before they fade
+    const back = [], have = new Set(due.map((x) => x.course + ":" + x.it.id));
+    (opts.returns || []).forEach(({ course, n, label }) => {
+      const pk = list.find((x) => x.id === course)?.pack; if (!pk) return;
+      pk.items.filter((it) => KINDS.has(it.kind) && +it.class === +n && !have.has(course + ":" + it.id))
+        .map((it) => ({ it, st: Mem.get(course, it.id) })).filter(({ st }) => st && t - st.t > 2 * 86400)
+        .map(({ it }) => ({ course, pack: pk, it, why: "after", whyText: label, r: Mem.recall(course, it.id, t) }))
+        .sort((a, b) => a.r - b.r).slice(0, 3).forEach((x) => back.push(x));
+    });
+    due.unshift(...back);
     // new things from each course in turn
     const fresh = [];
     for (let k = 0; lanes.some((l) => k < l.length); k++) lanes.forEach((l) => { if (k < l.length) fresh.push(l[k]); });
