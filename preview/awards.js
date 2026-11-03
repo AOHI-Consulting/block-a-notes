@@ -2,14 +2,25 @@
    ranked, and once earned they stay (forgetting later doesn't take one back). Most are read from what Check-in
    already keeps (rooms, keys, your run, the notebook, letters to the GM); a few are marked when they happen
    (a welcome back, a warm-up, a renovation, saying it out loud, passing a card on). Kept as marks
-   (mem:path-_awards: award:<id>, and stars:<course>:<n>), so they sync like the rest of your progress.
+   (mem:path-awards: award:<id>, and stars:<course>:<n>), so they sync like the rest of your progress.
 
    A course's hotel earns up to five stars: its first floor complete, half its rooms lit, every room lit,
    ten keys, half its rooms with keys. */
 
 const Awards = (() => {
   const K = () => Practise.kit, SK = () => Study.kit;
-  const BOX = "_awards";
+  const BOX = "awards";
+  // until 4 Nov 2026 they were kept as mem:path-_awards, a name the sync turns away (no underscores), so they
+  // stayed on one device: move them over once, the later mark winning where both have one
+  try {
+    const OLD = LS + "mem:path-_awards", NEW = LS + "mem:path-awards", o = JSON.parse(localStorage.getItem(OLD) || "null");
+    if (o) {
+      const n = JSON.parse(localStorage.getItem(NEW) || "null") || { v: 1, owner: null, items: {}, days: {}, at: 0 };
+      for (const [k, x] of Object.entries(o.items || {})) if (!n.items[k] || (x?.t || 0) > (n.items[k].t || 0)) n.items[k] = x;
+      n.at = Math.max(n.at || 0, o.at || 0);
+      localStorage.setItem(NEW, JSON.stringify(n)); localStorage.removeItem(OLD);
+    }
+  } catch (e) {}
   const has = (id) => Mem.flagged(BOX, "award:" + id);
   const when = (id) => Mem.flagAt(BOX, "award:" + id);
   const topicsOf = (pk) => pk.items.filter((it) => it.kind === "topic");

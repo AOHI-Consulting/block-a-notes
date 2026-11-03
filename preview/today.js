@@ -152,9 +152,11 @@ const Today = (() => {
       const visits = Math.max(1, Math.round(days / 3.5)), k = Math.min(4, Math.ceil(cand.length / visits));
       cand.sort((a, b) => a.r - b.r).slice(0, k).forEach((x) => due.push(x));
     });
-    // new things from each course in turn (a course you want to be ready for first)
+    // new things from each course in turn: a course you want to be ready for first, then a course with a
+    // class this past week, then the rest in the mix's order (the block you're in first)
     const soon = (l) => { const rd = l[0] && opts.ready?.get(l[0].course); return rd && (rd.at - t) / 86400 <= READY_DAYS && rd.at > t ? 0 : 1; };
-    lanes.sort((a, b) => soon(a) - soon(b));
+    const lately = (l) => (l[0] && opts.recent?.get(l[0].course)?.has(+l[0].it.class) ? 0 : 1);
+    lanes.sort((a, b) => soon(a) - soon(b) || lately(a) - lately(b));
     const fresh = [];
     for (let k = 0; lanes.some((l) => k < l.length); k++) lanes.forEach((l) => { if (k < l.length) fresh.push(l[k]); });
     const costOf = (x) => x.why === "new"
@@ -162,7 +164,8 @@ const Today = (() => {
       : { topic: COST.say, framework: COST.pick, mcq: COST.mcq }[x.it.kind];
     let spent = 0;
     const takeDue = [], takeNew = [], rest = [];
-    const cap = fresh.length ? budget * 0.6 : budget;   // leave room for something new
+    // leave room for something new; for a class this past week, room for at least one of its things
+    const cap = !fresh.length ? budget : lately([fresh[0]]) === 0 ? Math.min(budget * 0.6, budget - costOf(fresh[0])) : budget * 0.6;
     due.forEach((x) => { const c = costOf(x); if (!takeDue.length || spent + c <= cap) { takeDue.push(x); spent += c; } else rest.push(x); });
     for (const x of fresh) { const c = costOf(x); if (takeDue.length + takeNew.length && spent + c > budget) break; takeNew.push(x); spent += c; }
     rest.forEach((x) => { const c = costOf(x); if (spent + c <= budget) { takeDue.push(x); spent += c; } });

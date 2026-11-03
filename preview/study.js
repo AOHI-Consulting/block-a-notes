@@ -617,7 +617,7 @@ const Study = (() => {
     let line;
     if (pk) {
       const r = Path.lit(c.id, pk), sm = Mem.summary(c.id), nk = Path.claimKeys(c.id, pk).length;
-      line = (r.lit || sm.seen ? Path.litLine(r) : r.rooms + " rooms on " + pk.nums.length + " floors · not started") + (nk ? " · " + nk + (nk === 1 ? " key" : " keys") : "");
+      line = (r.lit || sm.seen ? Path.litLine(r) : plural(r.rooms, "room") + " on " + plural(pk.nums.length, "floor") + " · not started") + (nk ? " · " + nk + (nk === 1 ? " key" : " keys") : "");
       mh.innerHTML = Crab.mini(pk.nums.length, r.rooms ? r.lit / r.rooms : 0);
     } else if (ready) {
       const sm = Mem.summary(c.id);
@@ -1241,13 +1241,22 @@ const Study = (() => {
   const mins = () => (MINS.includes(store.get("study:mins")) ? store.get("study:mins") : 5);
   const runOff = () => !!store.get("study:run:off");
   const plural = (n, one, many) => n + " " + (n === 1 ? one : many || one + "s");
-  // Your daily mix: the courses you picked for it (study:mix, on this device); until you pick, the ready
-  // courses you've started, or every ready course before you start one.
+  // Your daily mix, the block you're in first. Until you pick: the ready courses of the block you're in (and
+  // those across blocks) with the ones you've started, so a new block's courses join on their own and an
+  // earlier block's only if you'd begun them; before anything of this block is ready, the ones you've started,
+  // or every ready course. Once you pick (study:mix, on this device), your pick, plus a course of this block
+  // that became ready after you picked (study:mix:known: the ready courses when you picked).
+  const inBlock = (c) => { const b = blockNow(); return !/^[A-Z]$/.test(c.block || "") || (!!b && c.block === b.id); };
   function mix() {
     const ready = T.cat.filter((c) => c.status === "ready"), chosen = store.get("study:mix");
-    const picked = Array.isArray(chosen) ? ready.filter((c) => chosen.includes(c.id)) : [];
-    if (picked.length) return picked;
-    const started = ready.filter((c) => Mem.summary(c.id).seen);
+    const first = (l) => [...l.filter(inBlock), ...l.filter((c) => !inBlock(c))];
+    if (Array.isArray(chosen)) {
+      const known = Array.isArray(store.get("study:mix:known")) ? store.get("study:mix:known") : chosen;
+      const picked = ready.filter((c) => chosen.includes(c.id) || (inBlock(c) && !known.includes(c.id)));
+      if (picked.length) return first(picked);
+    }
+    const started = ready.filter((c) => Mem.summary(c.id).seen), now = ready.filter(inBlock);
+    if (now.length) return first(ready.filter((c) => inBlock(c) || started.includes(c)));
     return started.length ? started : ready;
   }
   // which ready courses today's session draws from; at least one stays in. Folded to one line until you change it.
@@ -1265,7 +1274,8 @@ const Study = (() => {
       b.addEventListener("click", () => {
         const next = new Set(on); if (has) next.delete(c.id); else next.add(c.id);
         if (!next.size) return;
-        store.set("study:mix", ready.filter((x) => next.has(x.id)).map((x) => x.id)); onChange();
+        store.set("study:mix", ready.filter((x) => next.has(x.id)).map((x) => x.id));
+        store.set("study:mix:known", ready.map((x) => x.id)); onChange();
       });
       g.append(b);
     });
