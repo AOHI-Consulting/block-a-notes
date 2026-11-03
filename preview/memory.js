@@ -87,6 +87,7 @@ const Mem = (() => {
      (mem:path-<course>: per mark v, t, n), so they sync and merge the same way. */
   const pathKey = (course) => "mem:path-" + course;
   const flagged = (course, key) => !!load(pathKey(course)).items[key]?.v;
+  const flagAt = (course, key) => { const x = load(pathKey(course)).items[key]; return x?.v ? x.t : null; };   // when it was marked (seconds)
   function flag(course, key, t = now()) {
     const k = pathKey(course), b = load(k), old = b.items[key];
     b.items[key] = { v: 1, t: Math.max(t, (old?.t || 0) + 1e-3), n: (old?.n || 0) + 1 };
@@ -217,7 +218,7 @@ const Mem = (() => {
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync(); else if (sy.timer) sync(); });
 
   return { grade, tick, get, last, recall, seed, summary, sync, status, today, days: () => load("mem:days").days,
-           note, setNote, notes, NOTE_MAX, flag, flagged, slip, apart, mixups, mixOf, MIX_AT, APART,
+           note, setNote, notes, NOTE_MAX, flag, flagged, flagAt, slip, apart, mixups, mixOf, MIX_AT, APART,
            caseGet, caseSet, caseAll, CASE_MAX, _next: next, _merge: merge };
 })();
 

@@ -4,8 +4,11 @@
    read first and explained a few cards later; a new framework is read, then recognised. Cards for what
    is fading change format (flashcard, "which framework is this?", "where would you look it up?") so you
    recall it from a different side each time.
-   The run counts the days you study (5 cards or more, on any device). Missing one day is a rest and
-   keeps the run; two days in a row start a new one. */
+   The run counts weeks, not days in a row: a day you do 5 cards or more (on any device) is a study day,
+   and a week with one study day counts. One week off is a rest and keeps the run; two in a row start a
+   new one. A week with no class in any course (a holiday, the gap between blocks) pauses the run: it
+   neither counts nor breaks it, unless you study in it. Study days only ever add up. Back after four days or more, the session starts with what you
+   knew best, so coming back feels like getting somewhere, not like a backlog. */
 
 const Today = (() => {
   const DAY_MIN = 5;                    // cards that make a study day
@@ -99,8 +102,9 @@ const Today = (() => {
   /* ---------- a session ---------- */
   // list: [{ id, meta, pack }] for the courses in your mix; mins: 5, 10 or 15.
   // opts (before and after class, from the timetable): recent: Map(course → Set of classes held this past
-  // week), whose new things come first; returns: [{ course, n, label }] for day 3 and day 7 after a class,
-  // when a few things from it come back even before they fade; label: { "course:n": "from Monday's class" }.
+  // week), whose new things come first; returns: [{ course, n, label, round }]: on your first visit from day 3
+  // after a class (round 1), and again from day 7 (round 2), a few things from it come back even before they
+  // fade; label: { "course:n": "from Monday's class" }. welcome: back after days away (what you knew best first).
   function plan(list, mins, t = now(), opts = {}) {
     const budget = mins * 60, due = [], lanes = [];
     list.forEach(({ id, pack }) => {
@@ -120,14 +124,15 @@ const Today = (() => {
       if (rec?.size) lane = [...lane.filter((x) => rec.has(+x.it.class)).map((x) => ({ ...x, whyText: opts.label?.[id + ":" + (+x.it.class)] })), ...lane.filter((x) => !rec.has(+x.it.class))];
       lanes.push(lane);
     });
-    due.sort((a, b) => a.r - b.r);
+    // the weakest first; back after days away, what you knew best first (quick wins before the hard ones)
+    due.sort((a, b) => (opts.welcome ? b.r - a.r : a.r - b.r));
     // day 3 and day 7 after a class: a few things from it, the weakest first, even before they fade
     const back = [], have = new Set(due.map((x) => x.course + ":" + x.it.id));
-    (opts.returns || []).forEach(({ course, n, label }) => {
+    (opts.returns || []).forEach(({ course, n, label, round }) => {
       const pk = list.find((x) => x.id === course)?.pack; if (!pk) return;
       pk.items.filter((it) => KINDS.has(it.kind) && +it.class === +n && !have.has(course + ":" + it.id))
         .map((it) => ({ it, st: Mem.get(course, it.id) })).filter(({ st }) => st && t - st.t > 2 * 86400)
-        .map(({ it }) => ({ course, pack: pk, it, why: "after", whyText: label, r: Mem.recall(course, it.id, t) }))
+        .map(({ it }) => ({ course, pack: pk, it, why: "after", whyText: label, n, round, r: Mem.recall(course, it.id, t) }))
         .sort((a, b) => a.r - b.r).slice(0, 3).forEach((x) => back.push(x));
     });
     due.unshift(...back);
@@ -179,16 +184,32 @@ const Today = (() => {
 
   /* ---------- the run ---------- */
   const num = (s) => { const [y, m, d] = s.split("-").map(Number); return Math.round(Date.UTC(y, m - 1, d) / 864e5); };
+  const wkOf = (n) => Math.floor((n + 3) / 7);   // weeks start on Monday (day 0, 1 Jan 1970, was a Thursday)
   const LABELS = ["M", "T", "W", "T", "F", "S", "S"], NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const AWAY = 4;   // days without a card that make a "welcome back"
+  // the weeks with no class in any course, between the first and last class we know of (setTerm, from
+  // the timetables in the course list)
+  let BREAKS = new Set();
+  function setTerm(dates) {
+    const ws = new Set(dates.filter(Boolean).map((d) => wkOf(num(d))));
+    BREAKS = new Set();
+    if (!ws.size) return;
+    for (let w = Math.min(...ws); w <= Math.max(...ws); w++) if (!ws.has(w)) BREAKS.add(w);
+  }
   function run(days, today) {
     const studied = new Set(Object.entries(days || {}).filter(([, c]) => c >= DAY_MIN).map(([d]) => num(d)));
-    const t0 = num(today), has = (n) => studied.has(n);
+    const t0 = num(today), w0 = wkOf(t0), has = (n) => studied.has(n);
+    const weeks = new Set([...studied].map(wkOf)), hasW = (w) => weeks.has(w);
+    // the weeks that matter, this one first: a week without classes drops out unless you studied in it
+    const seq = [hasW(w0)];
+    for (let w = w0 - 1, first = Math.min(w0, ...weeks); w >= first; w--) if (hasW(w) || !BREAKS.has(w)) seq.push(hasW(w));
+    // weeks in a run: this week is still going; one week off is a rest, two in a row end it
     let count = 0;
-    const start = has(t0) ? t0 : has(t0 - 1) ? t0 - 1 : has(t0 - 2) ? t0 - 2 : null;
-    if (start !== null) for (let d = start; ;) { if (has(d)) { count++; d--; } else if (has(d - 1)) d--; else break; }
-    let best = 0, len = 0, prev = null;
-    [...studied].sort((a, b) => a - b).forEach((d) => { len = prev !== null && d - prev <= 2 ? len + 1 : 1; best = Math.max(best, len); prev = d; });
-    const dow = (t0 + 3) % 7;   // day 0 (1 Jan 1970) was a Thursday; Monday is 0 here
+    const start = seq[0] ? 0 : seq[1] ? 1 : seq[2] ? 2 : null;
+    if (start !== null) for (let i = start; ;) { if (seq[i]) { count++; i++; } else if (seq[i + 1]) i++; else break; }
+    let best = 0, len = 0, gap = 9;
+    [...seq].reverse().forEach((x) => { if (x) { len = gap <= 1 ? len + 1 : 1; best = Math.max(best, len); gap = 0; } else gap++; });
+    const dow = (t0 + 3) % 7;   // Monday is 0 here
     const byNum = {};
     Object.entries(days || {}).forEach(([d, c]) => (byNum[num(d)] = c));
     const week = LABELS.map((label, i) => {
@@ -196,14 +217,29 @@ const Today = (() => {
       const state = n > t0 ? "future" : has(n) ? "done" : c ? "some" : n === t0 ? "today" : "off";
       return { label, name: NAMES[i], state, cards: c, isToday: n === t0 };
     });
+    // days since you last did a card (0 today; null before your first)
+    const active = Object.entries(days || {}).filter(([, c]) => c > 0).map(([d]) => num(d)).filter((n) => n <= t0);
+    const away = active.length ? t0 - Math.max(...active) : null;
     return {
       count, best: Math.max(best, count), today: has(t0), cardsToday: byNum[t0] || 0,
-      keep: !has(t0) && !has(t0 - 1) && has(t0 - 2),   // today keeps the run going
+      thisWeek: hasW(w0), daysThisWeek: week.filter((d) => d.state === "done").length, total: studied.size,
+      keep: !seq[0] && !seq[1] && !!seq[2],   // last week was a rest: this week keeps the run
+      away, welcome: away !== null && away >= AWAY,
       week,
     };
   }
+  // the line at the end of a lesson about your run (null when the run is hidden, or nothing to say)
+  function endNote(before) {
+    if (store.get("study:run:off")) return null;
+    const r = run(Mem.days(), Mem.today());
+    if (r.today && !before?.today) return before && !before.thisWeek
+      ? "That's a study day, and this week counts: " + (r.count === 1 ? "your run starts." : "a " + r.count + "-week run.")
+      : "That's today's study day: " + r.total + (r.total === 1 ? " so far." : " study days so far.");
+    if (!r.today) return (DAY_MIN - r.cardsToday) + (DAY_MIN - r.cardsToday === 1 ? " more card" : " more cards") + " and today is a study day.";
+    return null;
+  }
 
-  return { plan, retry, tomorrow, run, path, cue, nameOf, pickOf, whereOf, DAY_MIN, FADING };
+  return { plan, retry, tomorrow, run, endNote, setTerm, path, cue, nameOf, pickOf, whereOf, DAY_MIN, FADING, AWAY };
 })();
 
 window.Today = Today;

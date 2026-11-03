@@ -372,10 +372,16 @@ const Path = (() => {
 
   /* ---------- renovation ----------
      A floor with two or more dimming rooms gets scaffolding, and a renovation: a few minutes on what is
-     fading in that class. When it's done the scaffolding comes down. */
+     fading in that class. When it's done the scaffolding comes down. Only one floor at a time (the one
+     with most rooms dimming), so a hotel you come back to after a while has one job, not a list. */
   const RENO_AT = 2;
   const dimOn = (c, u) => lessonsOf(u).filter((nd) => { const st = status(c, nd); return st.done && st.fading; }).length;
-  const needsReno = (c, u) => !!u.n && dimOn(c, u) >= RENO_AT;
+  function renoFloor(c, pk) {
+    let best = null, most = RENO_AT - 1;
+    units(pk).forEach((u) => { if (!u.n) return; const d = dimOn(c, u); if (d > most) { best = u; most = d; } });
+    return best;
+  }
+  const needsReno = (c, u, pk) => !!u.n && renoFloor(c, pk)?.n === u.n;
   const floorFading = (c, pk, n) => fadingIds(c, pk).filter((id) => inClass(itemOf(pk, id), n));
   function renoPlan(c, pk, u) {
     const topics = lessonsOf(u).filter((nd) => { const st = status(c, nd); return st.done && st.fading; }).map((nd) => nd.parts[0].t.id);
@@ -400,6 +406,7 @@ const Path = (() => {
     const head = el("section", "ho-head");
     head.append(SK().crumbs("#/study", "All courses"), el("p", "kicker", [crs.code, crs.lecturer].filter(Boolean).join(" · ")), el("h1", null, crs.full || crs.name), el("p", "ho-sum", litLine(c)));
     if (crs.note) head.append(el("p", "small st-note", crs.note));
+    if (run.welcome && c.dim) head.append(el("p", "ho-back", "Welcome back. Some lights dimmed while you were away: that's how memory works, and what you bring back after a gap stays longer."));
     w.append(head);
     const page = el("div", "ho-page");
     // the building
@@ -408,7 +415,7 @@ const Path = (() => {
       code: crs.code || "", mood: run.today ? "happy" : "idle", sky: Crab.skyAt(), lights: Crab.seasonAt() === "lights",
       label: (crs.code || crs.name) + " as a hotel: a floor per " + U.toLowerCase() + ", a window per topic. " + litLine(c) + (keys.size ? ", " + keys.size + (keys.size === 1 ? " key" : " keys") : "") + ".",
       floors: [...floors.map((u) => {
-        const fc = roomsLit(course, [u]), ls = lessonsOf(u), j = justDone ? ls.findIndex((nd) => nd.id === justDone) : -1, rn = needsReno(course, u);
+        const fc = roomsLit(course, [u]), ls = lessonsOf(u), j = justDone ? ls.findIndex((nd) => nd.id === justDone) : -1, rn = needsReno(course, u, pk);
         const ks = ls.map((nd, i) => (nd.kind === "lesson" && keys.has(nd.parts[0].t.id) ? i : -1)).filter((i) => i >= 0);
         return { n: u.n, windows: windowsOf(course, u, cur), href: "#/study/" + course + "/f/" + u.n, just: j, keys: ks, fresh: freshClass(pk, meta, u.n),
           scaffold: rn, unscaffold: !rn && reno === String(u.n), done: u.nodes.every((nd) => status(course, nd).done),
@@ -423,9 +430,9 @@ const Path = (() => {
     const side = el("div", "ho-side");
     side.append(nextCard(course, pk, cur, planned));
     const acts = el("div", "ho-acts"), fade = fadingIds(course, pk).length, mixes = mixList(course, pk).length, miss = mistakes(course, pk).length;
-    const renos = floors.filter((u) => needsReno(course, u)).sort((a, b) => dimOn(course, b) - dimOn(course, a));
-    if (renos.length) acts.append(act("Renovate floor " + renos[0].n, "#/study/" + course + "/l/renovate-" + renos[0].n, "gold", "wrench", dimOn(course, renos[0]) + " rooms dimming on floor " + renos[0].n + ": a few minutes brings them back"));
-    else if (fade) acts.append(act("Refresh " + fade, "#/study/" + course + "/l/refresh", "gold", "sun", fade + " fading: a few minutes brings them back"));
+    const rf = renoFloor(course, pk);
+    if (rf) acts.append(act("Renovate floor " + rf.n, "#/study/" + course + "/l/renovate-" + rf.n, "gold", "wrench", dimOn(course, rf) + " rooms dimming on floor " + rf.n + ": a few minutes brings them back"));
+    else if (fade) acts.append(act("Refresh · " + refreshMins(fade) + " min", "#/study/" + course + "/l/refresh", "gold", "sun", "Some of what you learnt is fading: a few minutes brings it back"));
     if (mixes) acts.append(act(mixes === 1 ? "1 mix-up" : mixes + " mix-ups", "#/study/" + course + "/l/mixups", "coral", "swap", "Ideas you keep confusing: tell them apart"));
     if (miss) acts.append(act("Your mistakes " + miss, "#/study/" + course + "/l/mistakes", "plain", "reset", "What you last got wrong: one more go"));
     if (acts.children.length) side.append(acts);
@@ -488,9 +495,9 @@ const Path = (() => {
     a.style.setProperty("--cc", SK().color(u.n, pk));
     const n = el("span", "ho-fn", String(u.n)), t = el("span", "ho-ft");
     const nk = lessonsOf(u).filter((nd) => nd.kind === "lesson" && keys.has(nd.parts[0].t.id)).length;
-    const line = needsReno(course, u) ? "Scaffolding up · " + fc.dim + " rooms dimming"
+    const line = needsReno(course, u, pk) ? "Scaffolding up · " + fc.dim + " rooms dimming"
       : (done ? (fc.dim ? "Complete · " + fc.dim + " dimming" : "Complete") : started ? litLine(fc) : fc.rooms + (fc.rooms === 1 ? " room" : " rooms") + " · not started") + (nk ? " · " + nk + (nk === 1 ? " key" : " keys") : "");
-    t.append(el("b", null, u.name), el("small", needsReno(course, u) ? "reno" : null, line));
+    t.append(el("b", null, u.name), el("small", needsReno(course, u, pk) ? "reno" : null, line));
     if (fresh) a.classList.add("fresh");
     if (fresh) n.after(el("span", "ho-new", "New"));
     a.append(n, t);
@@ -529,7 +536,7 @@ const Path = (() => {
     if (u.n) row.append(SK().link("Class notes", "#/study/" + course + "/c" + u.n, "small ghost", "book"));
     head.append(row);
     w.append(head);
-    if (needsReno(course, u)) {
+    if (needsReno(course, u, pk)) {
       const bn = el("div", "panel ho-reno"), ic = el("span", "ho-renoic"), t = el("div", "ho-renot");
       ic.innerHTML = '<svg viewBox="0 0 40 30" aria-hidden="true"><path d="M5 2 V28 M20 2 V28 M35 2 V28" stroke="#2B1B17" stroke-width="3.6" stroke-linecap="round"/><path d="M5 2 V28 M20 2 V28 M35 2 V28" stroke="#B5813A" stroke-width="2" stroke-linecap="round"/><path d="M5 24 L20 6 M20 24 L35 6" stroke="#B5813A" stroke-width="1.4"/><rect x="1" y="5" width="38" height="3.6" rx="1" fill="#E3B062" stroke="#2B1B17" stroke-width=".9"/><rect x="1" y="21" width="38" height="3.6" rx="1" fill="#E3B062" stroke="#2B1B17" stroke-width=".9"/></svg>';
       t.append(el("b", null, "Scaffolding's up: " + dimOn(course, u) + " rooms here are dimming"), el("span", "small", "A short renovation brings them back. The scaffolding comes down when you're done."));
@@ -632,7 +639,7 @@ const Path = (() => {
       color: "var(--gold)", steps, title: "Floor " + n + " renovated!",
       end(box) {
         const left = dimOn(course, u);
-        box.append(el("p", "ls-runnote", left >= RENO_AT ? left + " rooms still dimming: they come back in your daily session." : "The scaffolding comes down: “" + u.name + "” is lit again."));
+        box.append(el("p", "ls-runnote", left >= RENO_AT ? left + " rooms still dimming: they come back in your daily session, no rush." : "The scaffolding comes down: “" + u.name + "” is lit again."));
       },
       done() { Study.justDone("renovate-" + n); location.replace(home); }, exit() { location.replace(home); },
     });
@@ -657,13 +664,15 @@ const Path = (() => {
       done() { location.replace(home); }, exit() { location.replace(home); },
     });
   }
-  // what is fading in the course, brought back
+  // what is fading in the course, brought back (ten at most at a time: about five minutes)
+  const REFRESH_MAX = 10;
+  const refreshMins = (n) => Math.max(2, Math.round(Math.min(n, REFRESH_MAX) * 0.5));
   function playRefresh(w, course, pk, home) {
     const ids = fadingIds(course, pk);
     if (!ids.length) { location.replace(home); return; }
     Lesson.play(w, {
-      color: "var(--gold)", steps: practiceSteps(course, pk, ids, 10), title: "Refreshed!",
-      end(box) { const left = fadingIds(course, pk).length; box.append(el("p", "ls-runnote", left ? left + " still fading: they come back in your daily session." : "Nothing fading in this course now.")); },
+      color: "var(--gold)", steps: practiceSteps(course, pk, ids, REFRESH_MAX), title: "Refreshed!",
+      end(box) { const left = fadingIds(course, pk).length; box.append(el("p", "ls-runnote", left ? "The rest comes back a few at a time in your daily session: nothing to catch up on." : "Nothing fading in this course now.")); },
       done() { location.replace(home); }, exit() { location.replace(home); },
     });
   }
@@ -701,16 +710,15 @@ const Path = (() => {
     const st = status(course, nd), again = st.done && !nd.flag;
     const steps = stepsFor(course, pk, nd, again);
     if (!steps.length) { location.replace(nd.n ? home + "/c" + nd.n : home); return; }
-    const runBefore = Today.run(Mem.days(), Mem.today()).today;
+    const runBefore = Today.run(Mem.days(), Mem.today());
     const color = nd.n ? SK().color(nd.n, pk) : "var(--c9)";
     const unit = units(pk).find((u) => u.nodes.includes(nd)), unitDone = () => unit.nodes.every((x) => status(course, x).done), wasDone = unitDone();
     Lesson.play(w, {
       color, steps,
       title: nd.kind === "story" ? "Story done!" : nd.kind === "review" ? SK().unit(pk) + " " + nd.n + " reviewed!" : again ? "Practice done!" : "Lesson complete!",
       end(box) {
-        const run = Today.run(Mem.days(), Mem.today());
-        if (run.today && !runBefore) box.append(el("p", "ls-runnote", "That's today's study day: your run is now " + run.count + (run.count === 1 ? " day." : " days.")));
-        else if (!run.today) box.append(el("p", "ls-runnote", (Today.DAY_MIN - run.cardsToday) + " more cards and today counts for your run."));
+        const rn = Today.endNote(runBefore);
+        if (rn) box.append(el("p", "ls-runnote", rn));
         if (nd.flag) Mem.flag(course, nd.id);
         // the last lesson of a class: a moment for the whole class
         if (!wasDone && unitDone()) {
@@ -731,14 +739,14 @@ const Path = (() => {
   function playMistakes(w, course, pk, home) {
     const ids = mistakes(course, pk);
     if (!ids.length) { location.replace(home); return; }
-    const before = ids.length, runBefore = Today.run(Mem.days(), Mem.today()).today;
+    const before = ids.length, runBefore = Today.run(Mem.days(), Mem.today());
     Lesson.play(w, {
       color: "var(--gold)", steps: practiceSteps(course, pk, ids, 12), title: "Mistakes practised!",
       end(box) {
         const left = mistakes(course, pk).length, fixed = Math.max(0, before - left);
         box.append(el("p", "ls-runnote", fixed ? fixed + (fixed === 1 ? " mistake" : " mistakes") + " put right." + (left ? " " + left + " still on the list." : " The list is empty.") : left + " still on the list: they come back here and in your daily session."));
-        const run = Today.run(Mem.days(), Mem.today());
-        if (run.today && !runBefore) box.append(el("p", "ls-runnote", "That's today's study day: your run is now " + run.count + (run.count === 1 ? " day." : " days.")));
+        const rn = Today.endNote(runBefore);
+        if (rn) box.append(el("p", "ls-runnote", rn));
       },
       done() { location.replace(home); },
       exit() { location.replace(home); },

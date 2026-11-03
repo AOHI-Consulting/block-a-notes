@@ -38,7 +38,12 @@ const Study = (() => {
   const failed = (e) => (e && e.name === "OperationError" ? "key" : "net");
   function catalog() {
     if (T.cat) return Promise.resolve(T.cat);
-    if (!T.catLoading) T.catLoading = K().openBox("packs/catalog.enc").then((c) => { T.blocks = c.blocks || []; return (T.cat = c.courses); }).catch((e) => { T.catLoading = null; throw e; });
+    if (!T.catLoading) T.catLoading = K().openBox("packs/catalog.enc").then((c) => {
+      T.blocks = c.blocks || [];
+      // weeks with no class in any course pause the run of study weeks
+      Today.setTerm(c.courses.flatMap((x) => [...classesOf(x).map((k) => k.date), ...(x.events || []).map((e) => e.date)]));
+      return (T.cat = c.courses);
+    }).catch((e) => { T.catLoading = null; throw e; });
     return T.catLoading;
   }
   function pack(id) {
@@ -398,8 +403,9 @@ const Study = (() => {
   /* ---------- the timetable: before and after class ----------
      A course's classes with their dates: from its schedule in the course list (MyTimetable), and the
      classes already built into its pack. The evening before (or the day of) a class, Today offers a
-     warm-up; for the week after it, its new things come first; on day 3 and day 7 a few of them come
-     back. A class still to come is a floor under construction. */
+     warm-up; for the week after it, its new things come first; on your first visit from day 3, and again
+     from day 7, a few of them come back (marked back1:<n>, back2:<n> on the path once done, so a later
+     visit still gets them). A class still to come is a floor under construction. */
   const unitName = (x) => x?.course?.unit || x?.unit || "Class";   // a pack, or a course in the list
   const dnum = (iso) => Math.round(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 864e5);
   const tnum = () => dnum(Mem.today());
@@ -438,10 +444,20 @@ const Study = (() => {
         if (!k.built || !k.date) return;
         const d = t0 - dnum(k.date);
         if (d >= 0 && d <= 7) { if (!recent.has(id)) recent.set(id, new Set()); recent.get(id).add(k.n); label[id + ":" + k.n] = "from " + classDay(k.date); }
-        if ((d >= 3 && d <= 4) || (d >= 7 && d <= 8)) returns.push({ course: id, n: k.n, label: "back from " + classDay(k.date) });
+        // the returns wait for your next visit: the first from day 3 (until three weeks on), the second from
+        // day 7 and at least three days after the first (until four weeks on)
+        const b1 = Mem.flagAt(id, "back1:" + k.n), b2 = Mem.flagged(id, "back2:" + k.n), label2 = "back from " + classDay(k.date);
+        if (!b1 && d >= 3 && d <= 21) returns.push({ course: id, n: k.n, round: 1, label: label2 });
+        else if (b1 && !b2 && d >= 7 && d <= 28 && t0 - dnum(Mem.today(new Date(b1 * 1000))) >= 3) returns.push({ course: id, n: k.n, round: 2, label: label2 });
       });
     });
-    return { recent, returns, label };
+    return { recent, returns, label, welcome: Today.run(Mem.days(), Mem.today()).welcome };
+  }
+  // the class returns a finished session brought back: done, so they don't come again
+  function markReturns(steps) {
+    const done = new Set();
+    steps.forEach((st) => { if (st.why === "after" && st.round) done.add(st.course + "|back" + st.round + ":" + st.n); });
+    done.forEach((x) => { const [c, k] = x.split("|"); Mem.flag(c, k); });
   }
   // the course's timetable, as a short list (folded away on a course page)
   function timetable(c, pk) {
@@ -596,7 +612,7 @@ const Study = (() => {
     const ab = sec("How Check-in works"); ab.id = "about";
     [
       "Every course of the Master, built from the lecturers' material, what was said in class and research we checked ourselves. Each course is a hotel: a floor per class, a room per topic. A room's window lights up once you know it and dims as it starts to fade.",
-      "Today's session mixes what is fading with something new, in 5, 10 or 15 minutes. A day counts for your run after 5 cards; one missed day is a rest and keeps the run.",
+      "Today's session mixes what is fading with something new, in 5, 10 or 15 minutes, however long you've been away: it never grows into a backlog. A day counts after 5 cards, and your run counts weeks with a study day in them: a week off is a rest, not a reset, and weeks without classes (holidays) don't count against it.",
       "When you confuse two ideas twice, they become a mix-up: a quick round to tell them apart, until you've done it on three different days. After a topic you can apply it to a hotel of your choice; your answers collect in a case notebook per course.",
       "The crab carries a hotel for a shell and moves into a bigger one each block. Nobody is ranked, and nothing here is marked by AI: you mark your own written answers.",
     ].forEach((t) => ab.append(el("p", null, t)));
@@ -1156,11 +1172,15 @@ const Study = (() => {
     const p = (T.plan = Today.plan(list, mx ? mins() - 1 : mins(), undefined, planOpts(list)));
     const any = p.steps.length || mx, soon = upcoming(), warm = soon.find((x) => warmable(x.c, x.k.n));
     // the crab: its flag shows your run once today counts, it naps after a rest day, otherwise it waits
-    const state = run.today && !runOff() ? "run" : run.keep && !runOff() ? "rest" : "idle";
-    const say = soon.length && !run.today ? (soon[0].when === "today" ? "Class later today. " : "Class tomorrow. ") + (warm ? "A 3-minute warm-up?" : "The new floor opens after it.")
+    // (back after days away it waves you in, whatever the run says)
+    const state = run.welcome && (p.steps.length || mx) ? "right" : run.today && !runOff() ? "run" : run.keep && !runOff() && !run.thisWeek ? "rest" : "idle";
+    const welcome = run.welcome && any;
+    const say = soon.length && !run.today && warm ? (soon[0].when === "today" ? "Class later today. " : "Class tomorrow. ") + "A 3-minute warm-up?"
+      : welcome ? (p.due ? "Welcome back! We'll start with what you knew best." : "Welcome back! Nothing has faded, so on with something new.")
+      : soon.length && !run.today ? (soon[0].when === "today" ? "Class later today. " : "Class tomorrow. ") + "The new floor opens after it."
       : !any ? "All caught up. Nothing is fading, and you've seen everything so far."
       : run.today ? "That's today counted. Anything more is a bonus."
-      : state === "rest" ? "Yesterday was a rest day. Your run is still on."
+      : state === "rest" ? "Last week was a rest. Your run is still on."
       : p.due ? mins() + " minutes today. What's fading comes first."
       : mins() + " minutes today, with something new.";
     const top = el("div", "td-top"), greet = el("div", "td-greet"), crab = el("div", "td-crab");
@@ -1181,14 +1201,15 @@ const Study = (() => {
       body.append(cl);
     }
     if (any) {
-      body.append(el("h2", null, run.today ? "Another " + mins() + " minutes?" : "Your " + mins() + " minutes"));
+      body.append(el("h2", null, run.today ? "Another " + mins() + " minutes?" : welcome ? "Welcome back · " + mins() + " minutes" : "Your " + mins() + " minutes"));
+      if (welcome && p.due) body.append(el("p", "small td-back", "Some of it faded while you were away. That's normal: one session at a time brings it back, and there's no backlog to clear."));
       const ul = el("ul", "td-list"), li = (ic, cls, b, rest) => { const x = el("li"); x.append(el("i", cls, ic), el("b", null, b), el("span", null, rest)); ul.append(x); };
       const many = list.length > 1;
       const after = p.steps.filter((s2) => s2.why === "after"), fading = p.due - after.length;
       if (after.length) li("↺", "acc", after.length + " back", String(after[0].whyText || "").replace(/^back /, ""));
       if (fading > 0) {
         const by = [...new Set(p.steps.filter((s2) => s2.why === "fading").map((s2) => s2.pack.course.code || s2.pack.course.name))];
-        li("◐", "gold", fading + " to refresh", many ? by.join(", ") : "fading");
+        li("◐", "gold", fading + (welcome ? " to bring back" : " to refresh"), [many ? by.join(", ") : "", welcome ? "what you knew best first" : many ? "" : "fading"].filter(Boolean).join(" · "));
       }
       if (p.fresh) {
         const x = p.steps.find((s2) => s2.why === "new") || p.next, c = x && x.pack.classes[x.it.class];
@@ -1214,7 +1235,7 @@ const Study = (() => {
     });
     return g;
   }
-  // this week's days and the run; gentle: one missed day is a rest
+  // this week's days and the run; gentle: the run counts weeks, and one week off is a rest
   function runRow(run, justCounted) {
     const r = el("div", "td-run");
     const wk = el("ol", "td-week"); wk.setAttribute("aria-label", "This week");
@@ -1226,16 +1247,17 @@ const Study = (() => {
       wk.append(li);
     });
     const t = el("div", "td-runtext"), head = el("p");
-    head.append(el("b", null, run.count ? run.count + "-day run" : "No run yet"));
-    if (run.best > run.count) head.append(el("span", null, " · best " + run.best));
+    head.append(el("b", null, run.count ? run.count + "-week run" : "No run yet"));
+    if (run.total) head.append(el("span", null, " · " + plural(run.total, "study day")));
     const left = Today.DAY_MIN - run.cardsToday;
-    const say = run.today ? "Today counts."
-      : run.cardsToday ? plural(left, "more card") + " and today counts."
-      : run.keep ? "A few minutes today keep your run going."
-      : run.count ? "Today can be a rest day: one missed day doesn't break your run."
-      : Today.DAY_MIN + " cards make a day.";
+    const say = run.today ? (run.daysThisWeek > 1 ? "Today counts too. Every day past the first is a bonus." : "Today counts, and so does this week.")
+      : run.cardsToday ? plural(left, "more card") + " and today is a study day."
+      : run.thisWeek ? "This week already counts. Today is a bonus."
+      : run.keep ? "Last week was a rest. One study day this week keeps your run."
+      : run.count ? "One study day any time this week keeps your run going."
+      : "One study day a week makes a run: " + Today.DAY_MIN + " cards make a day.";
     const note = el("p", "small", say);
-    note.title = "A day counts once you've done " + Today.DAY_MIN + " cards (anywhere in Study, on any device). Missing one day is a rest and keeps the run; two days in a row start a new one.";
+    note.title = "A day counts once you've done " + Today.DAY_MIN + " cards (anywhere in Study, on any device), and a week counts with one study day. One week off is a rest and keeps the run; two in a row start a new one. Weeks without classes don't count against it.";
     t.append(head, note);
     r.append(wk, t, K().textBtn("Hide", () => { store.set("study:run:off", true); K().render(); }));
     return r;
@@ -1243,14 +1265,14 @@ const Study = (() => {
 
   // The daily session, in the lesson player: what is fading, then new things from your path.
   function renderToday(w, list) {
-    const mx = mixFor(list), p = Today.plan(list, mx ? mins() - 1 : mins(), undefined, planOpts(list));
+    const mx = mixFor(list), p = Today.plan(list, mx ? mins() - 1 : mins(), undefined, planOpts(list)), welcome = Today.run(Mem.days(), Mem.today()).welcome;
     if (!p.steps.length && !mx) {
       const d = el("div", "panel st-done");
       d.append(el("p", "kicker", "Today"), el("h2", null, "All caught up"), el("p", "small", "Nothing is fading, and you've seen everything in your courses so far."));
       const b = el("div", "btns"); b.append(link("Back to Study", "#/study", "primary", "back")); d.append(b);
       w.append(d); return;
     }
-    const before = Today.run(Mem.days(), Mem.today()).today, many = list.length > 1;
+    const runBefore = Today.run(Mem.days(), Mem.today()), before = runBefore.today, many = list.length > 1;
     // a new topic is taught in small steps, as in its room; a fading one comes back from one of three sides
     const steps = p.steps.flatMap((st) => {
       const tag = (x, why) => ({ ...x, why, whyText: why ? st.whyText : null, r: st.r, showCourse: many });
@@ -1273,21 +1295,22 @@ const Study = (() => {
     const mixSteps = mx ? Path.mixSteps(mx.course, mx.pk, mx.m).map((x) => ({ ...x, showCourse: many })) : [];
     if (mixSteps.length) steps.splice(Math.min(2, steps.length), 0, ...mixSteps);
     Lesson.play(w, {
-      color: "var(--accent)", steps, title: "Today's session done!",
+      color: "var(--accent)", steps, title: welcome ? "Welcome back, and done!" : "Today's session done!",
       end(box, res) {
+        markReturns(p.steps);
         const run = Today.run(Mem.days(), Mem.today()), justCounted = run.today && !before;
         if (mx) Path.settledLines(box, mx.pk, Path.settle(res.log, [mx.m]));
-        if (justCounted) box.querySelector("h2").textContent = "Done, and today counts!";
+        if (justCounted && !runOff()) box.querySelector("h2").textContent = runBefore.thisWeek ? "Done, and today counts!" : "Done, and this week counts!";
         if (!runOff()) box.append(runRow(run, justCounted));
         // where each course in the mix stands, and what comes back tomorrow
         const where = el("div", "td-courses");
         list.forEach(({ id, meta }) => {
           const sm = Mem.summary(id), row = el("div", "td-course");
-          row.append(el("b", null, meta.code || meta.name), meter("Known", sm.known, meta.items), el("span", "small", sm.fading ? sm.fading + " fading" : "nothing fading"));
+          row.append(el("b", null, meta.code || meta.name), meter("Known", sm.known, meta.items), el("span", "small", !sm.fading ? "nothing fading" : sm.fading > 9 ? "10+ fading, no rush" : sm.fading + " fading"));
           where.append(row);
         });
         const tm = Today.tomorrow(list);
-        where.append(el("p", "small", tm ? "About " + plural(tm, "card") + " will be fading by tomorrow evening: that's tomorrow's session." : "Nothing will be fading by tomorrow."));
+        where.append(el("p", "small", !tm ? "Nothing will be fading by tomorrow." : tm <= 10 ? "About " + plural(tm, "card") + " will be fading by tomorrow evening: that's your next session, whenever it is." : "Your next session, whenever it is, takes the most useful few of what's fading: there's nothing to catch up on."));
         box.append(where);
         // something deeper: an open question from a class you just worked on
         const deep = deeper(res.log);

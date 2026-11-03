@@ -64,7 +64,7 @@ const Lesson = (() => {
     if (ex.retry) k.append(el("span", "ls-why", "Once more"));
     else if (ex.why === "new") k.append(el("span", "ls-why new", ex.whyText ? "New · " + ex.whyText : "New to you"));
     else if (ex.why === "after") k.append(el("span", "ls-why new", ex.whyText ? ex.whyText[0].toUpperCase() + ex.whyText.slice(1) : "From class"));
-    else if (ex.why === "fading") k.append(el("span", "ls-why fading", "Memory " + Math.round(ex.r * 100) + "%"));
+    else if (ex.why === "fading") k.append(el("span", "ls-why fading", ex.r < 0.6 ? "It's been a while" : "Memory " + Math.round(ex.r * 100) + "%"));   // a low score after a break reads like a mark
     return k;
   }
   const card = (cls) => { const a = el("article", "ls-card " + (cls || "")); a.tabIndex = -1; return a; };
@@ -902,7 +902,9 @@ const Lesson = (() => {
 
   window.addEventListener("hashchange", () => { if (R && !/^#\/study\//.test(location.hash)) stop(); });
 
-  return { play, stop, active: () => !!R, shuffle, words, norm };
+  return { play, stop, active: () => !!R, shuffle, words, norm,
+    _finish: () => R && finish(),   // for testing from the console: jump to the end screen
+    _steps: () => (R ? R.steps.map((x) => ({ type: x.type, why: x.why || null, whyText: x.whyText || null, id: x.it?.id || null, r: x.r ?? null })) : null) };
 })();
 
 window.Lesson = Lesson;
