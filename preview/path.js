@@ -243,9 +243,26 @@ const Path = (() => {
   // a framework the topic just taught (its name is the topic's title) needs no card of its own
   const taught = (f, t) => norm(nameOf(f.title)) === norm(t.title) || norm(t.title).startsWith(norm(nameOf(f.title)) + " ");
 
+  // guess first (no score): one of the topic's own questions before it is taught, or its hotel scene.
+  // Guessing before you learn helps you remember, even when the guess is wrong; the question comes back
+  // later in the lesson, for real.
+  function guessEx(c, pk, t, q) {
+    if (q) return { type: "mcq", ...base(c, pk, q), items: [], guess: true, retryable: false };
+    const sc = sceneEx(c, pk, t);
+    return sc ? { ...sc, items: [], guess: true, retryable: false } : null;
+  }
+  // find it fast: where would you look this topic up? Only in a mix of classes (in a class's own lesson
+  // the answer is the floor you're on). Not counted as remembering the topic itself.
+  function whereEx(c, pk, t) { const w = Today.whereOf(pk, t); return w ? { type: "where", ...base(c, pk, t), items: [], where: w, retryable: false } : null; }
+  function whereFrom(c, pk, topics) {
+    if (new Set(topics.map((t) => String(t.class))).size < 2) return null;
+    for (const t of shuffle(topics)) { const e = whereEx(c, pk, t); if (e) return e; }
+    return null;
+  }
   function lessonSteps(c, pk, nd) {
     const steps = [], later = [];
     nd.parts.forEach(({ t, f, q }) => {
+      const g = guessEx(c, pk, t, q[0]); if (g) steps.push(g);
       steps.push(...teachSteps(c, pk, t));
       f.forEach((x) => { if (!taught(x, t)) steps.push(learnEx(c, pk, x)); });
       f.forEach((x) => { const e = pickEx(c, pk, x) || typeEx(c, pk, x); if (e) later.push(e); });
@@ -284,6 +301,9 @@ const Path = (() => {
     }
     const more = fwSeen.slice(2);
     if (more.length >= 3) out.push(matchEx(c, pk, more));
+    // and one "find it fast", when what you practise spans classes
+    const topics = items.filter((it) => it.kind === "topic");
+    if (topics.length >= 3) out.push(whereFrom(c, pk, topics));
     return spread(out.filter(Boolean));
   }
   // no two of a kind in a row, where it can be helped
@@ -410,7 +430,7 @@ const Path = (() => {
     // the rest: your notebook, flashcards, and a course's own extras (LDD's exam room)
     const more = el("div", "ho-more");
     const nb = Mem.caseAll(course).length;
-    more.append(SK().link("Case notebook" + (nb ? " · " + nb : ""), "#/study/" + course + "/case", "small", "pen"));
+    more.append(SK().link("Case notebook" + (nb ? " · " + nb : ""), "#/study/" + course + "/case", "small", "pen"), SK().link("Your index", "#/study/" + course + "/index", "small", "search"));
     if (pk.frameworks.length) more.append(SK().link("Framework flashcards", "#/study/" + course + "/cards", "small", "layers"));
     side.append(more);
     if (crs.exam?.practise || crs.slides) {
@@ -681,7 +701,7 @@ const Path = (() => {
   }
 
   return { render, renderFloor, play, units, status, current, stepsFor, practiceSteps, teachSteps, topicCheck, sceneEx, clozeEx, matchEx, typeEx, parts, sentences, mistakes,
-           mixList, mixSteps, settle, settledLines, applyOf, hotelOf, short, litLine, claimKeys, roomOf, KEY_DAYS,
+           mixList, mixSteps, settle, settledLines, applyOf, hotelOf, short, litLine, claimKeys, roomOf, KEY_DAYS, whereFrom,
            lit: (c, pk) => roomsLit(c, units(pk).filter((u) => u.n)) };
 })();
 

@@ -217,8 +217,8 @@ const Lesson = (() => {
     const go = btn("Continue", ok ? "good" : "next", next);
     inner.append(msg, go); f.append(inner);
     R.primary = go;
-    tone(ok ? "ok" : "no"); streak(ok);
-    if (!ok) R.cur?.view.el.classList.add("ls-shake");
+    tone(ok ? "ok" : "no"); if (!R.cur?.ex?.guess) streak(ok);
+    if (!ok && !R.cur?.ex?.guess) R.cur?.view.el.classList.add("ls-shake");
     setTimeout(() => go.focus({ preventScroll: true }), 30);
   }
   // right answers in a row: a small counter in the top bar from three on
@@ -258,7 +258,7 @@ const Lesson = (() => {
     const tile = (v, l, cls) => { const t = el("div", "ls-stat " + (cls || "")); t.append(el("b", null, v), el("span", null, l)); stats.append(t); };
     // per thing you answered, how it ended: got it (or partly), or coming back sooner. No percentage.
     const last = new Map();
-    r.log.forEach((l) => { if (l.g == null) return; const ids = (l.ex.items || []).map((x) => x.id); (ids.length ? ids : [l.ex.it?.id]).forEach((id) => id && last.set(id, l.g)); });
+    r.log.forEach((l) => { if (l.g == null || l.ex.guess || l.ex.type === "where") return; const ids = (l.ex.items || []).map((x) => x.id); (ids.length ? ids : [l.ex.it?.id]).forEach((id) => id && last.set(id, l.g)); });
     const got = [...last.values()].filter((g) => g >= 2).length, back = last.size - got;
     if (got) tile(String(got), "got it", "acc");
     if (back) tile(String(back), "coming back", "combo");
@@ -277,6 +277,9 @@ const Lesson = (() => {
     if (r.best >= 3) tile(String(r.best), "in a row, at best", "combo");
     end.append(stats);
     if (keyBox) end.append(keyBox);
+    const lucky = r.log.filter((l) => l.lucky).length, sure = r.log.filter((l) => l.sureMiss).length;
+    if (lucky || sure) end.append(el("p", "ls-next", [lucky ? (lucky === 1 ? "One lucky guess comes" : lucky + " lucky guesses come") + " back sooner, to make sure it sticks." : "",
+      sure ? (sure === 1 ? "One answer you were sure of wasn't right" : sure + " answers you were sure of weren't right") + ": worth a second look." : ""].filter(Boolean).join(" ")));
     r.spec.end?.(end, result);
     r.stage.append(end);
     tone("done"); confetti(r.shell);
@@ -346,7 +349,8 @@ const Lesson = (() => {
       box.append(el("h3", null, "Picture it in a hotel"), p);
       ex.cue.forEach((x) => p.append(x === null ? el("span", "ls-blank") : document.createTextNode(x)));
       if (ex.more) p.append(document.createTextNode(" …"));
-      a.append(kick(ex, "Spot the idea"), el("h2", "ls-q", "Which idea is at work in this hotel?"), box);
+      a.append(kick(ex, ex.guess ? "Guess first · no score" : "Spot the idea"), el("h2", "ls-q", "Which idea is at work in this hotel?"), box);
+      if (ex.guess) a.append(el("p", "ls-guessline", "Before you learn it: what's your guess? A guess first helps you remember, even when it's wrong."));
       return choose(a, ex, ex.options, false, ex.answer, (ok) => {
         // the whole scene, names and all
         p.replaceWith(el("p", "ls-in", ex.hotel));
@@ -466,8 +470,10 @@ const Lesson = (() => {
     // a question with four or five options: choose, then Check
     mcq(ex) {
       const it = ex.it, a = card("ls-mcq");
-      a.append(kick(ex, "Question"), rich("h2", "ls-q", it.stem));
+      a.append(kick(ex, ex.guess ? "Guess first · no score" : "Question"), rich("h2", "ls-q", it.stem));
+      if (ex.guess) a.append(el("p", "ls-guessline", "Before you learn it: what's your guess? A guess first helps you remember, even when it's wrong."));
       return choose(a, ex, it.options, true, LETTERS.indexOf(it.answer), (ok, right) => {
+        if (ex.guess) { const b = el("div", "ls-fbody"); b.append(el("p", "ls-fbl", (ok ? "Yes: " : "It's ") + LETTERS[right] + ". " + it.options[right]), el("p", "ls-why", "You'll see why in a minute.")); return b; }
         drillStat(it.id, ok);
         const b = el("div", "ls-fbody");
         if (!ok) b.append(el("p", "ls-fbl", "The answer: " + LETTERS[right] + ". " + it.options[right]));
@@ -494,13 +500,16 @@ const Lesson = (() => {
 
     // where would you look it up? (which class)
     where(ex) {
-      const it = ex.it, pk = ex.pk, a = card("ls-where");
-      a.append(kick({ ...ex, hideClass: true }, "Where would you look it up?"), el("h2", "ls-title", it.title), el("p", "ls-gist", it.gist));
+      const it = ex.it, pk = ex.pk, a = card("ls-where"), topic = it.kind === "topic";
+      const gist = it.gist || Path.sentences(String(it.x?.plain || "").replace(/\*\*/g, ""))[0] || "";
+      a.append(kick({ ...ex, hideClass: true }, topic ? "Find it fast" : "Where would you look it up?"), el("h2", "ls-title", it.title), el("p", "ls-gist", gist));
+      if (topic) a.append(el("p", "ls-guessline", "You need it for a report or an open-book question. Which class's material do you open?"));
       const labels = ex.where.options.map((c) => SK().unit(pk) + " " + c + " · " + pk.classes[c].name);
       return choose(a, ex, labels, false, ex.where.answer, (ok) => {
         const b = el("div", "ls-fbody");
         if (!ok) b.append(el("p", "ls-fbl", "It's in " + SK().unit(pk).toLowerCase() + " " + it.class + "."));
-        b.append(SK().whereLine(pk, it));
+        if (topic) { const refs = K().sourcesLine(it.x?.refs || it.refs, !!pk.course.slides); if (refs) b.append(refs); b.append(el("p", "small", SK().unit(pk) + " " + it.class + ": " + pk.classes[it.class].name)); }
+        else b.append(SK().whereLine(pk, it));
         return b;
       });
     },
@@ -816,18 +825,40 @@ const Lesson = (() => {
       opts.append(b); return b;
     });
     a.append(opts);
+    // sure, or guessing? an optional tap once you've chosen, nothing assumed if you don't: a right guess
+    // comes back sooner (graded hard), and a miss you were sure of gets a word. Not on a "guess first",
+    // where everything is a guess.
+    let how = null;   // "sure" | "guess" | null
+    const unsure = el("div", "ls-how"); unsure.hidden = true; unsure.setAttribute("role", "group"); unsure.setAttribute("aria-label", "How sure are you? (optional)");
+    unsure.append(el("span", null, "How sure?"));
+    const hb = [["sure", "Sure", "S"], ["guess", "Guessing", "G"]].map(([k, l, key]) => {
+      const b = el("button", "ls-unsure " + k); b.type = "button"; b.setAttribute("aria-pressed", "false"); b.title = l + " (" + key + ")";
+      b.append(el("i"), document.createTextNode(l));
+      b.addEventListener("click", () => flip(k));
+      unsure.append(b); return b;
+    });
+    const flip = (k) => { if (locked) return; how = how === k ? null : k; hb[0].setAttribute("aria-pressed", String(how === "sure")); hb[1].setAttribute("aria-pressed", String(how === "guess")); tone("tap"); };
+    if (!ex.guess) a.append(unsure);
     const ready = footCheck(check, skip);
     function select(i) {
       if (locked) return;
       picked = i; bs.forEach((b, k) => b.setAttribute("aria-pressed", String(k === i)));
+      unsure.hidden = false;
       tone("tap"); ready(true);
     }
     function lock() { locked = true; bs.forEach((b, k) => { b.disabled = true; if (k === right) b.classList.add("right"); else if (k === picked) b.classList.add("wrong"); }); }
     function check() {
-      if (locked || picked === null) return; lock(); const ok = picked === right; grade(ex, ok ? 3 : 1);
+      if (locked || picked === null) return; lock(); const ok = picked === right;
+      hb.forEach((b) => (b.disabled = true));
+      const guessing = how === "guess", sure = how === "sure";
+      grade(ex, ok ? (guessing ? 2 : 3) : 1);
+      const entry = R.log[R.log.length - 1];
+      if (entry && !ex.guess) { if (ok && guessing) entry.lucky = true; if (!ok && sure) entry.sureMiss = true; }
       const ids = ex.ids || ex.pick?.ids;
-      if (!ok && ids?.[picked] && ex.it) Mem.slip(ex.course, ex.it.id, ids[picked]);
-      feedback(ok, explain(ok, right));
+      if (!ok && ids?.[picked] && ex.it && !ex.guess) Mem.slip(ex.course, ex.it.id, ids[picked]);
+      const body = explain(ok, right);
+      if (!ex.guess && how && !(ok && sure)) body.prepend(el("p", "ls-sure", ok ? "A guess, so it comes back sooner to make sure it sticks." : guessing ? "Just a guess: no harm done." : "You were sure about this one: worth a second look."));
+      feedback(ok, body, ex.guess ? (ok ? "Good guess!" : "Not this time") : ok && guessing ? "Good guess!" : undefined);
     }
     function skip() { if (locked) return; lock(); grade(ex, 1); feedback(false, explain(false, right), "Here's the answer"); }
     return {
@@ -835,6 +866,7 @@ const Lesson = (() => {
       key(e) {
         const k = e.key.toLowerCase(), i = /^[1-5]$/.test(k) ? +k - 1 : letters && /^[a-e]$/.test(k) ? k.charCodeAt(0) - 97 : -1;
         if (i >= 0 && i < bs.length) { select(i); return; }
+        if ((k === "g" || k === "s") && !unsure.hidden && !ex.guess) { flip(k === "g" ? "guess" : "sure"); return; }
         return false;
       },
     };

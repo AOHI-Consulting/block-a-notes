@@ -387,6 +387,7 @@ const Study = (() => {
     else if (rest[0] === "l" && rest[1]) Path.play(w, ctx, rest[1]);
     else if (rest[0] === "f" && rest[1] != null) Path.renderFloor(w, ctx, rest[1]);
     else if (rest[0] === "case") renderCase(w);
+    else if (rest[0] === "index") renderIndex(w);
     else if (m && T.data.classes[m[1]]) { store.set("study:last", [course.id, ...rest].join("/")); renderClass(w, +m[1], rest.slice(1)); }
     else {
       const just = T.justDone; T.justDone = null;
@@ -615,6 +616,49 @@ const Study = (() => {
     if (!done.length && !open.length) page.append(el("p", "panel cn-empty", "Learn a topic first. At the end of each new topic's lesson you can apply it to your hotel, and it lands here."));
     w.append(page);
     syncLine(w);
+  }
+  /* ---------- your index: where everything is ----------
+     Every topic and framework of a course, class by class, with where to look it up (the slide, the
+     page) and your own note: for an open-book exam or a report. "Only what I've learnt" narrows it;
+     it prints cleanly (or saves as a PDF from the print dialog). */
+  function renderIndex(w) {
+    const pk = T.data, c = T.course, crs = pk.course, mine = !!store.get("study:index:mine"), links = slides();
+    const head = el("section", "st-head ix-head");
+    head.append(crumbs(base(), (crs.code || crs.name) + " hotel"), el("p", "kicker", "Your index · " + (crs.code || crs.name)), el("h1", null, "Where everything is"),
+      el("p", "line", "Every topic and framework of the course, " + unit(pk).toLowerCase() + " by " + unit(pk).toLowerCase() + ", with where to look it up and your own notes. Handy for an open-book question or a report."));
+    const tools = el("div", "btns ix-tools");
+    const tg = el("label", "mo-tog ix-mine"), cb = el("input"); cb.type = "checkbox"; cb.checked = mine; cb.id = "ix-mine";
+    cb.addEventListener("change", () => { store.set("study:index:mine", cb.checked); K().render(); });
+    tg.append(cb, el("span", null, "Only what I've learnt"));
+    tools.append(tg, K().button("Print or save as PDF", "small ghost", () => window.print(), "doc"));
+    head.append(tools);
+    w.append(head);
+    const page = el("div", "st-page ix");
+    let shown = 0;
+    const known = (id) => !!Mem.get(c, id);
+    pk.nums.forEach((n) => {
+      const cl = pk.classes[n];
+      const topics = pk.items.filter((it) => it.kind === "topic" && String(it.class) === String(n) && (!mine || known(it.id)));
+      const fws = pk.items.filter((it) => it.kind === "framework" && String(it.class) === String(n) && (!mine || known(it.id)));
+      if (!topics.length && !fws.length) return;
+      const s = el("section", "ix-sec"); s.style.setProperty("--cc", color(n, pk));
+      s.append(el("h2", "ix-h", unit(pk) + " " + n + " · " + cl.name));
+      const row = (it, kind) => {
+        const r = el("div", "ix-row" + (known(it.id) ? " known" : "")), t = el("div", "ix-t");
+        t.append(el("span", "ix-kind", kind), el("b", null, it.title));
+        if (kind === "Framework" && it.gist) t.append(el("p", "ix-gist", it.gist));
+        r.append(t);
+        const refs = K().sourcesLine(it.x?.refs || it.refs || (it.ref ? [it.ref] : []), links); if (refs) r.append(refs);
+        const note = Mem.note(c, it.id).trim(); if (note) r.append(el("p", "ix-note", note));
+        shown++;
+        return r;
+      };
+      topics.forEach((it) => s.append(row(it, "Topic")));
+      fws.forEach((it) => s.append(row(it, "Framework")));
+      page.append(s);
+    });
+    if (!shown) page.append(el("p", "panel cn-empty", mine ? "Nothing learnt in this course yet. Untick “Only what I've learnt” to see the whole course." : "This course has no topics yet."));
+    w.append(page);
   }
   function caseEntry(c, pk, it, e) {
     const a = el("article", "panel cn-entry"), n = Path.applyOf(pk, it, Path.hotelOf(c)).points.length;
@@ -1060,6 +1104,7 @@ const Study = (() => {
     const mr = mixRow(load); if (mr) body.append(mr);
     box.append(top, greet, body);
     if (!runOff()) box.append(runRow(run));
+    else { const p = el("p", "small td-hidden"); p.append(document.createTextNode("Your run of study days is hidden. "), K().textBtn("Show it", () => { store.set("study:run:off", false); K().render(); })); box.append(p); }
   }
   function sizes(onChange) {
     const g = el("div", "td-sizes"); g.setAttribute("role", "group"); g.setAttribute("aria-label", "Minutes a day");
@@ -1118,6 +1163,14 @@ const Study = (() => {
         retryable: st.kind === "mcq" || st.kind === "learn" ? false : undefined,
       }];
     });
+    // one "find it fast": where would you look up a topic you've learnt that isn't in today's cards
+    // (so nothing on screen gives its class away)
+    if (steps.length >= 4) for (const { id, pack: pk } of list) {
+      const inSession = new Set(p.steps.map((st) => st.it.id));
+      const known = pk.items.filter((it) => it.kind === "topic" && Mem.get(id, it.id) && !inSession.has(it.id));
+      const wh = known.length >= 2 && Path.whereFrom(id, pk, known);
+      if (wh) { steps.splice(Math.max(1, steps.length - 1), 0, { ...wh, showCourse: many, why: null }); break; }
+    }
     const mixSteps = mx ? Path.mixSteps(mx.course, mx.pk, mx.m).map((x) => ({ ...x, showCourse: many })) : [];
     if (mixSteps.length) steps.splice(Math.min(2, steps.length), 0, ...mixSteps);
     Lesson.play(w, {

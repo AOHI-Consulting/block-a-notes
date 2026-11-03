@@ -78,12 +78,14 @@ const Today = (() => {
   }
   function whereOf(pack, it) {
     if (!it.class || !pack.classes[it.class]) return null;
-    // a class that has a framework of the same name isn't a wrong answer
-    const also = new Set(pack.items.filter((f) => f.kind === "framework" && nameOf(f.title) === nameOf(it.title)).map((f) => f.class));
-    const wrong = pack.nums.filter((n) => !also.has(n));
-    if (wrong.length < 3) return null;
-    const options = [it.class, ...shuffle(wrong).slice(0, 3)].sort((a, b) => a - b);
-    return { options, answer: options.indexOf(it.class) };
+    // its own class, and a class that has a framework of the same name, aren't wrong answers
+    // (classes are numbers in the course, sometimes text on an item: compare them as numbers)
+    const own = +it.class;
+    const also = new Set(pack.items.filter((f) => f.kind === "framework" && nameOf(f.title) === nameOf(it.title)).map((f) => +f.class));
+    const wrong = pack.nums.filter((n) => +n !== own && !also.has(+n));
+    if (wrong.length < 2) return null;
+    const options = [own, ...shuffle(wrong).slice(0, 3)].sort((a, b) => a - b);
+    return { options, answer: options.indexOf(own) };
   }
   // a framework you've seen before, from a side you haven't just used
   function fwStep(base, pack, it, avoid) {
